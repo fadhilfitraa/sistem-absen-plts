@@ -3,6 +3,10 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import Webcam from "react-webcam";
 import { supabase } from "../../lib/supabase";
 
+// Konfigurasi Batas Waktu & Toleransi
+const BATAS_PAGI = { jam: 8, menit: 40 }; // 08.30 + Toleransi 10 menit
+const BATAS_SIANG = { jam: 13, menit: 35 }; // 13.30 + Toleransi 5 menit
+
 const MASTER_PESERTA = [
   "Donni Rides Imanuel Simanungkalit",
   "Otniel Faraytoda Simatupang",
@@ -31,8 +35,16 @@ const MASTER_ASISTEN = [
   "Adriel Siregar",
   "Rifqi Fadilah",
   "Reza Mahendra",
-  "Alvin Saputra"
+  "Alvin Saputra",
+  "Aldy Rizki Siahaan"
 ];
+
+interface NotaAbsen {
+  nama: string;
+  jenis: string;
+  waktu: string;
+  statusKehadiran: string;
+}
 
 export default function Absensi() {
   const [jalur, setJalur] = useState<string>("peserta");
@@ -40,10 +52,15 @@ export default function Absensi() {
   const [langkah, setLangkah] = useState<number>(1);
   const [lokasi, setLokasi] = useState<{ lat: number; lng: number } | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [nota, setNota] = useState<NotaAbsen | null>(null);
   const webcamRef = useRef<any>(null);
 
   const [rekomendasi, setRekomendasi] = useState<string[]>([]);
   const [tampilkanSaran, setTampilkanSaran] = useState<boolean>(false);
+
+  // STATE TAMBAHAN: Kendali Kamera Fleksibel
+  const [kameraDepan, setKameraDepan] = useState<boolean>(true);
+  const [isMirrored, setIsMirrored] = useState<boolean>(false); // Dimatikan secara default
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -106,6 +123,23 @@ export default function Absensi() {
       const { data } = supabase.storage.from('foto-absen').getPublicUrl(namaBerkas);
       const finalFotoUrl = data.publicUrl;
 
+      // Logika Kalkulasi Keterlambatan
+      const waktuSekarang = new Date();
+      const jam = waktuSekarang.getHours();
+      const menit = waktuSekarang.getMinutes();
+      
+      let statusKehadiran = "Tepat Waktu";
+      
+      if (jenis === "MASUK") {
+        if (jam > BATAS_PAGI.jam || (jam === BATAS_PAGI.jam && menit > BATAS_PAGI.menit)) {
+          statusKehadiran = "Terlambat";
+        }
+      } else if (jenis === "SIANG") {
+        if (jam > BATAS_SIANG.jam || (jam === BATAS_SIANG.jam && menit > BATAS_SIANG.menit)) {
+          statusKehadiran = "Terlambat";
+        }
+      }
+
       const { error: dbError } = await supabase.from('absensi').insert([{
         nama_peserta: nama,
         jenis_absen: jenis,
@@ -117,11 +151,23 @@ export default function Absensi() {
 
       if (dbError) return setStatus(`Failed to save data: ${dbError.message}`);
 
-      setStatus(`Successfully checked in for ${jenis} at ${new Date().toLocaleTimeString('id-ID')}`);
+      // Memicu Layar Sukses (Langkah 3)
+      setNota({
+        nama: nama,
+        jenis: jenis === "MASUK" ? "Absen Pagi" : "Absen Siang",
+        waktu: waktuSekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + " WIB",
+        statusKehadiran: statusKehadiran
+      });
+      
+      setLangkah(3);
+      setStatus("");
 
       setTimeout(() => { 
-        setLangkah(1); setNama(""); setStatus(""); window.location.href = "/"; 
-      }, 2000);
+        setLangkah(1); 
+        setNama(""); 
+        setNota(null);
+        window.location.href = "/"; 
+      }, 4000);
 
     } catch (error) {
       setStatus("An error occurred. Please try again.");
@@ -135,87 +181,157 @@ export default function Absensi() {
       <div className="absolute inset-0 bg-[url('/bg-plts.jpg')] bg-cover bg-center bg-no-repeat bg-fixed z-0"></div>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
 
-      {/* PERBAIKAN MUTLAK DI SINI:
-        Membuang elemen div terpisah dan menggunakan border-t-[6px] 
-        dengan warna dinamis sesuai jalur langsung pada kartu utama.
-      */}
-      <div className={`relative z-10 bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-gray-100 border-t-[6px] ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
+      <div className={`relative z-10 bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-gray-100 border-t-[6px] transition-all duration-500 ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
         
-        <div className="flex flex-col items-center mb-6 sm:mb-8 mt-1">
-          <img src="/logo-plts.png" alt="Logo PLTS" className="h-10 sm:h-14 object-contain mb-3 sm:mb-4" />
-          <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight text-center">Presensi {jalur === 'asisten' ? 'Asisten' : 'Peserta KP'}</h1>
-        </div>
+        {langkah !== 3 && (
+          <>
+            <div className="flex flex-col items-center mb-6 sm:mb-8 mt-1">
+              <img src="/logo-plts.png" alt="Logo PLTS" className="h-10 sm:h-14 object-contain mb-3 sm:mb-4" />
+              <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight text-center">Presensi {jalur === 'asisten' ? 'Asisten' : 'Peserta KP'}</h1>
+            </div>
 
-        {langkah === 1 && (
-          <div className="flex flex-col gap-4 sm:gap-5">
-            <div className="relative">
-              <label className="block text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Nama Lengkap</label>
-              <input 
-                type="text" 
-                placeholder="Nama Lengkap Anda..." 
-                value={nama}
-                onChange={handleKetikNama}
-                onFocus={() => nama && setTampilkanSaran(true)}
-                className="w-full bg-gray-50 border border-gray-200 p-3 sm:p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-black text-base placeholder-gray-400 transition-all"
-              />
-              {tampilkanSaran && rekomendasi.length > 0 && (
-                <div className="absolute left-0 right-0 top-full bg-white border border-gray-100 rounded-xl shadow-xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
-                  {rekomendasi.map((namaSaran) => (
-                    <div
-                      key={namaSaran}
-                      onClick={() => pilihNamaRekomendasi(namaSaran)}
-                      className="p-3 sm:p-3.5 hover:bg-gray-50 text-gray-800 text-sm cursor-pointer border-b border-gray-50 last:border-none transition-colors"
-                    >
-                      {namaSaran}
+            {langkah === 1 && (
+              <div className="flex flex-col gap-4 sm:gap-5">
+                <div className="relative">
+                  <label className="block text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Nama Lengkap</label>
+                  <input 
+                    type="text" 
+                    placeholder="Nama" 
+                    value={nama}
+                    onChange={handleKetikNama}
+                    onFocus={() => nama && setTampilkanSaran(true)}
+                    className="w-full bg-gray-50 border border-gray-200 p-3 sm:p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-black text-base placeholder-gray-400 transition-all"
+                  />
+                  {tampilkanSaran && rekomendasi.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full bg-white border border-gray-100 rounded-xl shadow-xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
+                      {rekomendasi.map((namaSaran) => (
+                        <div
+                          key={namaSaran}
+                          onClick={() => pilihNamaRekomendasi(namaSaran)}
+                          className="p-3 sm:p-3.5 hover:bg-gray-50 text-gray-800 text-sm cursor-pointer border-b border-gray-50 last:border-none transition-colors"
+                        >
+                          {namaSaran}
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-            
-            <button 
-              onClick={lanjutKeKamera} 
-              className={`w-full py-3.5 sm:py-4 rounded-xl font-semibold text-white text-sm sm:text-base shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}
-            >
-              Continue
-            </button>
-            <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors text-center w-full">
-              Back to Home
-            </button>
-          </div>
+                
+                <button 
+                  onClick={lanjutKeKamera} 
+                  className={`w-full py-3.5 sm:py-4 rounded-xl font-semibold text-white text-sm sm:text-base shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                >
+                  Continue
+                </button>
+                <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors text-center w-full">
+                  Back to Home
+                </button>
+              </div>
+            )}
+
+            {langkah === 2 && (
+              <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
+                
+                {/* PEMBARUAN UTAMA: Kamera dengan Kendali Melayang */}
+                <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] sm:aspect-auto flex items-center justify-center bg-black relative group">
+                  <Webcam 
+                    ref={webcamRef} 
+                    screenshotFormat="image/jpeg" 
+                    videoConstraints={{ facingMode: kameraDepan ? "user" : "environment" }} 
+                    mirrored={isMirrored}
+                    className="w-full h-full object-cover" 
+                  />
+                  
+                  {/* Panel Tombol Kendali Kamera (Kanan Atas Layar Kamera) */}
+                  <div className="absolute top-3 right-3 flex flex-col gap-2">
+                    <button 
+                      onClick={() => setKameraDepan(!kameraDepan)}
+                      className="bg-black/40 hover:bg-black/70 text-white p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20"
+                      title="Ganti Kamera Depan/Belakang"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    </button>
+                    <button 
+                      onClick={() => setIsMirrored(!isMirrored)}
+                      className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20 ${isMirrored ? 'bg-blue-600/90 text-white' : 'bg-black/40 hover:bg-black/70 text-white'}`}
+                      title="Nyalakan/Matikan Efek Cermin"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[10px] sm:text-[11px] font-mono text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg w-full text-center truncate">
+                  Koordinat: {lokasi?.lat}, {lokasi?.lng}
+                </p>
+                
+                <div className="flex flex-col sm:flex-row gap-3 w-full mt-1 sm:mt-2">
+                  <button onClick={() => kirimData('MASUK')} className="flex-1 bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
+                    Absen Pagi
+                  </button>
+                  <button onClick={() => kirimData('SIANG')} className="flex-1 bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base">
+                    Absen Siang
+                  </button>
+                </div>
+                <button onClick={() => setLangkah(1)} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
+                  Cancel
+                </button>
+              </div>
+            )}
+
+            {status && (
+              <div className="mt-5 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm text-gray-700 font-medium text-center animate-pulse">
+                {status}
+              </div>
+            )}
+          </>
         )}
 
-        {langkah === 2 && (
-          <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
-            <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] sm:aspect-auto flex items-center justify-center bg-black">
-              <Webcam 
-                ref={webcamRef} 
-                screenshotFormat="image/jpeg" 
-                videoConstraints={{ facingMode: "user" }} 
-                className="w-full h-full object-cover" 
-              />
+        {/* === LANGKAH 3: NOTA SUKSES === */}
+        {langkah === 3 && nota && (
+          <div className="flex flex-col items-center text-center py-2 animate-fade-in">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-100">
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+              </svg>
             </div>
-            <p className="text-[10px] sm:text-[11px] font-mono text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg w-full text-center truncate">
-              Koordinat: {lokasi?.lat}, {lokasi?.lng}
+
+            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-1">Presensi Sukses!</h1>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-widest mb-8">Digital Log Saved</p>
+
+            <div className="w-full bg-gray-50/50 border border-gray-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Nama Personel</span>
+                <span className="text-base font-bold text-gray-900 leading-tight block">{nota.nama}</span>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100/70">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Tipe Log</span>
+                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold ${nota.jenis === 'Absen Pagi' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                    {nota.jenis}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Waktu Sistem</span>
+                  <span className="text-sm font-semibold text-gray-800">{nota.waktu}</span>
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-gray-100/70 flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Status Waktu</span>
+                <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase ${
+                  nota.statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
+                  'bg-rose-50 text-rose-600 border border-rose-200'
+                }`}>
+                  {nota.statusKehadiran}
+                </span>
+              </div>
+            </div>
+
+            <p className="text-xs text-gray-400 font-medium animate-pulse">
+              Redirecting to home screen...
             </p>
-            
-            <div className="flex flex-col sm:flex-row gap-3 w-full mt-1 sm:mt-2">
-              <button onClick={() => kirimData('MASUK')} className="flex-1 bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
-                Check In
-              </button>
-              <button onClick={() => kirimData('PULANG')} className="flex-1 bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base">
-                Check Out
-              </button>
-            </div>
-            <button onClick={() => setLangkah(1)} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
-              Cancel
-            </button>
-          </div>
-        )}
-
-        {status && (
-          <div className="mt-5 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm text-gray-700 font-medium text-center">
-            {status}
           </div>
         )}
       </div>
