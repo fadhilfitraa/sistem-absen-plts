@@ -212,6 +212,9 @@ export default function Absensi() {
     }
   }, [nama, lokasi, jalur]);
 
+  // Penentuan jam secara real-time untuk visibilitas tombol
+  const jamSekarang = waktuLive ? waktuLive.getHours() : new Date().getHours();
+
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 font-sans text-black selection:bg-blue-100 overflow-hidden">
       
@@ -305,6 +308,7 @@ export default function Absensi() {
 
                 {waktuLive && (
                   <div className="w-full space-y-2">
+                    {/* Jika jam sistem di bawah jam 12:00, evaluasi aturan Absen Pagi (08:45) */}
                     {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -314,6 +318,7 @@ export default function Absensi() {
                       </div>
                     )}
                     
+                    {/* Jika jam sistem di atas atau sama dengan jam 12:00, evaluasi aturan Absen Siang (13:40) */}
                     {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
@@ -325,15 +330,19 @@ export default function Absensi() {
                   </div>
                 )}
                 
-                <div className="flex flex-col sm:flex-row gap-3 w-full mt-1 sm:mt-2">
-                  <button onClick={() => kirimData('MASUK')} className="flex-1 bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
-                    Absen Pagi
-                  </button>
-                  <button onClick={() => kirimData('SIANG')} className="flex-1 bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base">
-                    Absen Siang
-                  </button>
+                {/* PEMBARUAN: Tombol yang beradaptasi secara otomatis */}
+                <div className="flex flex-col w-full mt-1 sm:mt-2">
+                  {jamSekarang < 12 ? (
+                    <button onClick={() => kirimData('MASUK')} className="w-full bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
+                      Ambil Absen Pagi
+                    </button>
+                  ) : (
+                    <button onClick={() => kirimData('SIANG')} className="w-full bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm">
+                      Ambil Absen Siang
+                    </button>
+                  )}
                 </div>
-                {/* PERBAIKAN SINTAKS ERROR: Mengganti operator logika "||" dengan eksekusi urut block statement */}
+
                 <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
                   Cancel
                 </button>

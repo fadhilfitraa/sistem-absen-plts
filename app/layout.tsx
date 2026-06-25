@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Absensi KP PLTS",
-  description: "Sistem absensi untuk peserta KP di PLTS",
+  description: "Sistem absensi peserta Kerja Praktek di PLTS ITERA",
 };
 
 export default function RootLayout({
@@ -23,14 +23,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="id"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      {/* Perhatikan penambahan bg-white dan text-black di bawah ini */}
-      <body className="min-h-full flex flex-col bg-white text-black">
-        {children}
-      </body>
-    </html>
+   // Di dalam app/layout.tsx
+<html lang="id" suppressHydrationWarning={true}>
+  <body>
+    {children}
+  </body>
+</html>
   );
 }
