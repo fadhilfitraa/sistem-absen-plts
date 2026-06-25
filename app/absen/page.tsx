@@ -4,12 +4,12 @@ import Webcam from "react-webcam";
 import { supabase } from "../../lib/supabase";
 
 // Konfigurasi Batas Waktu & Toleransi
-const BATAS_PAGI = { jam: 8, menit: 45 }; // 08.30 + Toleransi 10 menit
-const BATAS_SIANG = { jam: 13, menit: 40 }; // 13.30 + Toleransi 5 menit
+const BATAS_PAGI = { jam: 8, menit: 45 }; // 08.30 + Toleransi 15 menit
+const BATAS_SIANG = { jam: 13, menit: 40 }; // 13.30 + Toleransi 10 menit
 
-// Konfigurasi Koordinat Pusat ITERA & Radius Maksimal (Meter)
-const ITERA_COORDS = { lat: -5.3575, lng: 105.3149 };
-const RADIUS_MAKSIMAL = 1500; // 1500 meter = 1.5 KM
+// Konfigurasi Koordinat Pusat & Radius Maksimal (Meter) Sesuai Instruksi Baru
+const ITERA_COORDS = { lat: -5.361523, lng: 105.310523 };
+const RADIUS_MAKSIMAL = 200; // Sangat ketat: Hanya 200 meter dari titik
 
 const MASTER_PESERTA = [
   "Donni Rides Imanuel Simanungkalit",
@@ -66,7 +66,7 @@ export default function Absensi() {
   const [kameraDepan, setKameraDepan] = useState<boolean>(true);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
 
-  // STATE BARU: Jam Digital Live untuk Detektor Keterlambatan Real-Time
+  // STATE: Jam Digital Live untuk Detektor Keterlambatan Real-Time
   const [waktuLive, setWaktuLive] = useState<Date | null>(null);
 
   useEffect(() => {
@@ -133,7 +133,7 @@ export default function Absensi() {
         const jarakKeItera = hitungJarakMeter(userLat, userLng, ITERA_COORDS.lat, ITERA_COORDS.lng);
 
         if (jarakKeItera > RADIUS_MAKSIMAL) {
-          setStatus(`Access Denied: You are outside ITERA radius (${Math.round(jarakKeItera)} meters away). Maximum perimeter allowance is ${RADIUS_MAKSIMAL}m.`);
+          setStatus(`Access Denied: You are outside the authorized zone (${Math.round(jarakKeItera)} meters away). Maximum perimeter allowance is ${RADIUS_MAKSIMAL}m.`);
           return;
         }
 
@@ -233,7 +233,7 @@ export default function Absensi() {
                   <label className="block text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Nama Lengkap</label>
                   <input 
                     type="text" 
-                    placeholder="Nama" 
+                    placeholder="Ketik Nama Anda..." 
                     value={nama}
                     onChange={handleKetikNama}
                     onFocus={() => nama && setTampilkanSaran(true)}
@@ -303,25 +303,22 @@ export default function Absensi() {
                   </span>
                 </div>
 
-                {/* FITUR BARU: SPANDUK PERINGATAN KETERLAMBATAN LIVE */}
                 {waktuLive && (
                   <div className="w-full space-y-2">
-                    {/* Jika jam sistem di bawah jam 12:00, evaluasi aturan Absen Pagi (08:45) */}
                     {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                         <p className="text-[11px] font-medium text-rose-700 leading-snug">
-                          Anda telah melewati batas Absen Pagi (08:45). Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
+                          Anda telah melewati batas Absen Pagi. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
                         </p>
                       </div>
                     )}
                     
-                    {/* Jika jam sistem di atas atau sama dengan jam 12:00, evaluasi aturan Absen Siang (13:40) */}
                     {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
                         <p className="text-[11px] font-medium text-rose-700 leading-snug">
-                          Anda telah melewati batas Absen Siang (13:40). Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
+                          Anda telah melewati batas Absen Siang. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
                         </p>
                       </div>
                     )}
@@ -336,7 +333,8 @@ export default function Absensi() {
                     Absen Siang
                   </button>
                 </div>
-                <button onClick={() => setLokasi(null) || setLangkah(1)} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
+                {/* PERBAIKAN SINTAKS ERROR: Mengganti operator logika "||" dengan eksekusi urut block statement */}
+                <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -350,7 +348,6 @@ export default function Absensi() {
           </>
         )}
 
-        {/* === LANGKAH 3: NOTA SUKSES === */}
         {langkah === 3 && nota && (
           <div className="flex flex-col items-center text-center py-2 animate-fade-in">
             <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-100">
@@ -376,7 +373,7 @@ export default function Absensi() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Live Time</span>
+                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Waktu Sistem</span>
                   <span className="text-sm font-semibold text-gray-800">{nota.waktu}</span>
                 </div>
               </div>
