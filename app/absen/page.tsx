@@ -4,8 +4,12 @@ import Webcam from "react-webcam";
 import { supabase } from "../../lib/supabase";
 
 // Konfigurasi Batas Waktu & Toleransi
-const BATAS_PAGI = { jam: 8, menit: 40 }; // 08.30 + Toleransi 10 menit
-const BATAS_SIANG = { jam: 13, menit: 35 }; // 13.30 + Toleransi 5 menit
+const BATAS_PAGI = { jam: 8, menit: 45 }; // 08.30 + Toleransi 10 menit
+const BATAS_SIANG = { jam: 13, menit: 40 }; // 13.30 + Toleransi 5 menit
+
+// Konfigurasi Koordinat Pusat ITERA & Radius Maksimal (Meter)
+const ITERA_COORDS = { lat: -5.3575, lng: 105.3149 };
+const RADIUS_MAKSIMAL = 1500; // 1500 meter = 1.5 KM
 
 const MASTER_PESERTA = [
   "Donni Rides Imanuel Simanungkalit",
@@ -58,15 +62,27 @@ export default function Absensi() {
   const [rekomendasi, setRekomendasi] = useState<string[]>([]);
   const [tampilkanSaran, setTampilkanSaran] = useState<boolean>(false);
 
-  // STATE TAMBAHAN: Kendali Kamera Fleksibel
+  // State Kendali Kamera
   const [kameraDepan, setKameraDepan] = useState<boolean>(true);
-  const [isMirrored, setIsMirrored] = useState<boolean>(false); // Dimatikan secara default
+  const [isMirrored, setIsMirrored] = useState<boolean>(false);
+
+  // STATE BARU: Jam Digital Live untuk Detektor Keterlambatan Real-Time
+  const [waktuLive, setWaktuLive] = useState<Date | null>(null);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const j = searchParams.get('jalur');
     if (j === 'asisten') setJalur('asisten');
   }, []);
+
+  // Efek untuk memutar jam secara live ketika kamera terbuka (Langkah 2)
+  useEffect(() => {
+    if (langkah === 2) {
+      setWaktuLive(new Date());
+      const interval = setInterval(() => setWaktuLive(new Date()), 1000);
+      return () => clearInterval(interval);
+    }
+  }, [langkah]);
 
   const daftarNamaAktif = jalur === 'asisten' ? MASTER_ASISTEN : MASTER_PESERTA;
 
@@ -91,18 +107,42 @@ export default function Absensi() {
     setTampilkanSaran(false);
   };
 
+  // Kalkulator Spasial Haversine Formula
+  const hitungJarakMeter = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371000;
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
   const lanjutKeKamera = () => {
     if (!nama) return setStatus("Mohon isi nama terlebih dahulu.");
     if (!daftarNamaAktif.includes(nama)) return setStatus(`Nama tidak terdaftar di sistem ${jalur === 'asisten' ? 'Asisten' : 'KP'}.`);
 
-    setStatus("Location access requested...");
+    setStatus("Verifying location compliance...");
+    
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setLokasi({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+        const jarakKeItera = hitungJarakMeter(userLat, userLng, ITERA_COORDS.lat, ITERA_COORDS.lng);
+
+        if (jarakKeItera > RADIUS_MAKSIMAL) {
+          setStatus(`Access Denied: You are outside ITERA radius (${Math.round(jarakKeItera)} meters away). Maximum perimeter allowance is ${RADIUS_MAKSIMAL}m.`);
+          return;
+        }
+
+        setLokasi({ lat: userLat, lng: userLng });
         setLangkah(2);
         setStatus("");
       },
-      (err) => setStatus(`GPS Failed: ${err.message}`)
+      (err) => setStatus(`GPS Failed: ${err.message}`),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -123,7 +163,6 @@ export default function Absensi() {
       const { data } = supabase.storage.from('foto-absen').getPublicUrl(namaBerkas);
       const finalFotoUrl = data.publicUrl;
 
-      // Logika Kalkulasi Keterlambatan
       const waktuSekarang = new Date();
       const jam = waktuSekarang.getHours();
       const menit = waktuSekarang.getMinutes();
@@ -151,7 +190,6 @@ export default function Absensi() {
 
       if (dbError) return setStatus(`Failed to save data: ${dbError.message}`);
 
-      // Memicu Layar Sukses (Langkah 3)
       setNota({
         nama: nama,
         jenis: jenis === "MASUK" ? "Absen Pagi" : "Absen Siang",
@@ -177,7 +215,6 @@ export default function Absensi() {
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 font-sans text-black selection:bg-blue-100 overflow-hidden">
       
-      {/* Latar Belakang & Overlay Gelap */}
       <div className="absolute inset-0 bg-[url('/bg-plts.jpg')] bg-cover bg-center bg-no-repeat bg-fixed z-0"></div>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
 
@@ -232,7 +269,6 @@ export default function Absensi() {
             {langkah === 2 && (
               <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
                 
-                {/* PEMBARUAN UTAMA: Kamera dengan Kendali Melayang */}
                 <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] sm:aspect-auto flex items-center justify-center bg-black relative group">
                   <Webcam 
                     ref={webcamRef} 
@@ -242,7 +278,6 @@ export default function Absensi() {
                     className="w-full h-full object-cover" 
                   />
                   
-                  {/* Panel Tombol Kendali Kamera (Kanan Atas Layar Kamera) */}
                   <div className="absolute top-3 right-3 flex flex-col gap-2">
                     <button 
                       onClick={() => setKameraDepan(!kameraDepan)}
@@ -261,9 +296,37 @@ export default function Absensi() {
                   </div>
                 </div>
 
-                <p className="text-[10px] sm:text-[11px] font-mono text-gray-500 bg-gray-100 px-3 py-1.5 rounded-lg w-full text-center truncate">
-                  Koordinat: {lokasi?.lat}, {lokasi?.lng}
-                </p>
+                <div className="w-full flex items-center justify-between bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Time</span>
+                  <span className="text-xs font-bold text-slate-700 font-mono">
+                    {waktuLive ? waktuLive.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "--:--:--"} WIB
+                  </span>
+                </div>
+
+                {/* FITUR BARU: SPANDUK PERINGATAN KETERLAMBATAN LIVE */}
+                {waktuLive && (
+                  <div className="w-full space-y-2">
+                    {/* Jika jam sistem di bawah jam 12:00, evaluasi aturan Absen Pagi (08:45) */}
+                    {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
+                      <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
+                        <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p className="text-[11px] font-medium text-rose-700 leading-snug">
+                          Anda telah melewati batas Absen Pagi (08:45). Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Jika jam sistem di atas atau sama dengan jam 12:00, evaluasi aturan Absen Siang (13:40) */}
+                    {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
+                      <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
+                        <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p className="text-[11px] font-medium text-rose-700 leading-snug">
+                          Anda telah melewati batas Absen Siang (13:40). Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 <div className="flex flex-col sm:flex-row gap-3 w-full mt-1 sm:mt-2">
                   <button onClick={() => kirimData('MASUK')} className="flex-1 bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-3 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
@@ -273,7 +336,7 @@ export default function Absensi() {
                     Absen Siang
                   </button>
                 </div>
-                <button onClick={() => setLangkah(1)} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
+                <button onClick={() => setLokasi(null) || setLangkah(1)} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
                   Cancel
                 </button>
               </div>
@@ -313,7 +376,7 @@ export default function Absensi() {
                   </span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Waktu Sistem</span>
+                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Live Time</span>
                   <span className="text-sm font-semibold text-gray-800">{nota.waktu}</span>
                 </div>
               </div>
