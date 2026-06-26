@@ -4,44 +4,12 @@ import Webcam from "react-webcam";
 import { supabase } from "../../lib/supabase";
 
 // Konfigurasi Batas Waktu & Toleransi
-const BATAS_PAGI = { jam: 8, menit: 45 }; // 08.30 + Toleransi 15 menit
-const BATAS_SIANG = { jam: 13, menit: 40 }; // 13.30 + Toleransi 10 menit
+const BATAS_PAGI = { jam: 8, menit: 45 }; 
+const BATAS_SIANG = { jam: 13, menit: 40 }; 
 
-// Konfigurasi Koordinat Pusat & Radius Maksimal (Meter) Sesuai Instruksi Baru
+// Konfigurasi Koordinat Pusat & Radius Maksimal (Meter)
 const ITERA_COORDS = { lat: -5.361523, lng: 105.310523 };
-const RADIUS_MAKSIMAL = 200; // Sangat ketat: Hanya 200 meter dari titik
-
-const MASTER_PESERTA = [
-  "Donni Rides Imanuel Simanungkalit",
-  "Otniel Faraytoda Simatupang",
-  "Aditya Arya Wijaya",
-  "M. Ragoz Rayhan",
-  "Alif Muhammad Iqbal",
-  "Tubagus Aan Kurniawan",
-  "Pasqual Rey Marvin Manurung",
-  "Erlangga Hadi Pratama",
-  "Muhammad Agung Ramadhan",
-  "Michelle Ivana Adelin",
-  "Dwi Atika Aulia",
-];
-
-const MASTER_ASISTEN = [
-  "Septy Engel",
-  "Tias Murdyani",
-  "Muhammad Fadhil Alfitra Budi",
-  "Al Mukhlisin",
-  "Dea Ilham Firdaus",
-  "Bintang Aditya Pratama",
-  "Muhammad Afiq Ahnaf Sadakatullah",
-  "Jonatan Sitinjak",
-  "Felira Dwi Maharani",
-  "Muhammad Hakim Maarif",
-  "Adriel Siregar",
-  "Rifqi Fadilah",
-  "Reza Mahendra",
-  "Alvin Saputra",
-  "Aldy Rizki Siahaan"
-];
+const RADIUS_MAKSIMAL = 200; 
 
 interface NotaAbsen {
   nama: string;
@@ -50,7 +18,14 @@ interface NotaAbsen {
   statusKehadiran: string;
 }
 
+interface Personel {
+  nama: string;
+  peran: string;
+}
+
 export default function Absensi() {
+  const [isMounted, setIsMounted] = useState(false);
+
   const [jalur, setJalur] = useState<string>("peserta");
   const [nama, setNama] = useState<string>("");
   const [langkah, setLangkah] = useState<number>(1);
@@ -59,23 +34,40 @@ export default function Absensi() {
   const [nota, setNota] = useState<NotaAbsen | null>(null);
   const webcamRef = useRef<any>(null);
 
+  // State untuk menampung master nama dari database Supabase
+  const [daftarNamaAktif, setDaftarNamaAktif] = useState<string[]>([]);
   const [rekomendasi, setRekomendasi] = useState<string[]>([]);
   const [tampilkanSaran, setTampilkanSaran] = useState<boolean>(false);
 
-  // State Kendali Kamera
   const [kameraDepan, setKameraDepan] = useState<boolean>(true);
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
-
-  // STATE: Jam Digital Live untuk Detektor Keterlambatan Real-Time
   const [waktuLive, setWaktuLive] = useState<Date | null>(null);
 
+  // Ambil data nama dari DB begitu komponen dimuat
   useEffect(() => {
+    setIsMounted(true);
+    
     const searchParams = new URLSearchParams(window.location.search);
-    const j = searchParams.get('jalur');
-    if (j === 'asisten') setJalur('asisten');
+    const j = searchParams.get('jalur') || 'peserta';
+    setJalur(j);
+
+    const muatNamaDariDB = async () => {
+      const peranQuery = j === 'asisten' ? 'ASISTEN' : 'PESERTA';
+      const { data, error } = await supabase
+        .from('master_personel')
+        .select('nama')
+        .eq('peran', peranQuery)
+        .order('nama', { ascending: true });
+
+      if (!error && data) {
+        setDaftarNamaAktif(data.map(p => p.nama));
+      }
+    };
+
+    muatNamaDariDB();
   }, []);
 
-  // Efek untuk memutar jam secara live ketika kamera terbuka (Langkah 2)
+  // Memutar jam live di langkah 2
   useEffect(() => {
     if (langkah === 2) {
       setWaktuLive(new Date());
@@ -83,8 +75,6 @@ export default function Absensi() {
       return () => clearInterval(interval);
     }
   }, [langkah]);
-
-  const daftarNamaAktif = jalur === 'asisten' ? MASTER_ASISTEN : MASTER_PESERTA;
 
   const handleKetikNama = (e: React.ChangeEvent<HTMLInputElement>) => {
     const nilaiInput = e.target.value;
@@ -107,7 +97,6 @@ export default function Absensi() {
     setTampilkanSaran(false);
   };
 
-  // Kalkulator Spasial Haversine Formula
   const hitungJarakMeter = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371000;
     const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -133,7 +122,7 @@ export default function Absensi() {
         const jarakKeItera = hitungJarakMeter(userLat, userLng, ITERA_COORDS.lat, ITERA_COORDS.lng);
 
         if (jarakKeItera > RADIUS_MAKSIMAL) {
-          setStatus(`Access Denied: You are outside the authorized zone (${Math.round(jarakKeItera)} meters away). Maximum perimeter allowance is ${RADIUS_MAKSIMAL}m.`);
+          setStatus(`Access Denied: Anda berada di luar area izin (${Math.round(jarakKeItera)} meter). Batas perimeter maksimal adalah ${RADIUS_MAKSIMAL}m.`);
           return;
         }
 
@@ -212,17 +201,22 @@ export default function Absensi() {
     }
   }, [nama, lokasi, jalur]);
 
-  // Penentuan jam secara real-time untuk visibilitas tombol
+  if (!isMounted) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
+        <div className="animate-pulse w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
   const jamSekarang = waktuLive ? waktuLive.getHours() : new Date().getHours();
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 sm:p-6 font-sans text-black selection:bg-blue-100 overflow-hidden">
-      
       <div className="absolute inset-0 bg-[url('/bg-plts.jpg')] bg-cover bg-center bg-no-repeat bg-fixed z-0"></div>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
 
       <div className={`relative z-10 bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-gray-100 border-t-[6px] transition-all duration-500 ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
-        
         {langkah !== 3 && (
           <>
             <div className="flex flex-col items-center mb-6 sm:mb-8 mt-1">
@@ -271,7 +265,6 @@ export default function Absensi() {
 
             {langkah === 2 && (
               <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
-                
                 <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] sm:aspect-auto flex items-center justify-center bg-black relative group">
                   <Webcam 
                     ref={webcamRef} 
@@ -282,20 +275,8 @@ export default function Absensi() {
                   />
                   
                   <div className="absolute top-3 right-3 flex flex-col gap-2">
-                    <button 
-                      onClick={() => setKameraDepan(!kameraDepan)}
-                      className="bg-black/40 hover:bg-black/70 text-white p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20"
-                      title="Ganti Kamera Depan/Belakang"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    </button>
-                    <button 
-                      onClick={() => setIsMirrored(!isMirrored)}
-                      className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20 ${isMirrored ? 'bg-blue-600/90 text-white' : 'bg-black/40 hover:bg-black/70 text-white'}`}
-                      title="Nyalakan/Matikan Efek Cermin"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg>
-                    </button>
+                    <button onClick={() => setKameraDepan(!kameraDepan)} className="bg-black/40 hover:bg-black/70 text-white p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
+                    <button onClick={() => setIsMirrored(!isMirrored)} className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20 ${isMirrored ? 'bg-blue-600/90 text-white' : 'bg-black/40 hover:bg-black/70 text-white'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>
                   </div>
                 </div>
 
@@ -308,99 +289,66 @@ export default function Absensi() {
 
                 {waktuLive && (
                   <div className="w-full space-y-2">
-                    {/* Jika jam sistem di bawah jam 12:00, evaluasi aturan Absen Pagi (08:45) */}
                     {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-medium text-rose-700 leading-snug">
-                          Anda telah melewati batas Absen Pagi. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
-                        </p>
+                        <p className="text-[11px] font-medium text-rose-700 leading-snug">Anda telah melewati batas Absen Pagi. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.</p>
                       </div>
                     )}
                     
-                    {/* Jika jam sistem di atas atau sama dengan jam 12:00, evaluasi aturan Absen Siang (13:40) */}
                     {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
                       <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-medium text-rose-700 leading-snug">
-                          Anda telah melewati batas Absen Siang. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.
-                        </p>
+                        <p className="text-[11px] font-medium text-rose-700 leading-snug">Anda telah melewati batas Absen Siang. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.</p>
                       </div>
                     )}
                   </div>
                 )}
                 
-                {/* PEMBARUAN: Tombol yang beradaptasi secara otomatis */}
                 <div className="flex flex-col w-full mt-1 sm:mt-2">
                   {jamSekarang < 12 ? (
-                    <button onClick={() => kirimData('MASUK')} className="w-full bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">
-                      Ambil Absen Pagi
-                    </button>
+                    <button onClick={() => kirimData('MASUK')} className="w-full bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">Ambil Foto & Absen Pagi</button>
                   ) : (
-                    <button onClick={() => kirimData('SIANG')} className="w-full bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm">
-                      Ambil Absen Siang
-                    </button>
+                    <button onClick={() => kirimData('SIANG')} className="w-full bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm">Ambil Foto & Absen Siang</button>
                   )}
                 </div>
 
-                <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">
-                  Cancel
-                </button>
+                <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">Cancel</button>
               </div>
             )}
 
             {status && (
-              <div className="mt-5 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm text-gray-700 font-medium text-center animate-pulse">
-                {status}
-              </div>
+              <div className="mt-5 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm text-gray-700 font-medium text-center animate-pulse">{status}</div>
             )}
           </>
         )}
 
         {langkah === 3 && nota && (
           <div className="flex flex-col items-center text-center py-2 animate-fade-in">
-            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-100">
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
-              </svg>
-            </div>
-
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-100"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
             <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-1">Presensi Sukses!</h1>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-widest mb-8">Digital Log Saved</p>
-
             <div className="w-full bg-gray-50/50 border border-gray-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8">
               <div>
                 <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Nama Personel</span>
                 <span className="text-base font-bold text-gray-900 leading-tight block">{nota.nama}</span>
               </div>
-              
               <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100/70">
                 <div>
                   <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Tipe Log</span>
-                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold ${nota.jenis === 'Absen Pagi' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
-                    {nota.jenis}
-                  </span>
+                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold ${nota.jenis === 'Absen Pagi' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{nota.jenis}</span>
                 </div>
                 <div>
                   <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Waktu Sistem</span>
                   <span className="text-sm font-semibold text-gray-800">{nota.waktu}</span>
                 </div>
               </div>
-
               <div className="pt-3 border-t border-gray-100/70 flex items-center justify-between">
                 <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Status Waktu</span>
-                <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase ${
-                  nota.statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' :
-                  'bg-rose-50 text-rose-600 border border-rose-200'
-                }`}>
-                  {nota.statusKehadiran}
-                </span>
+                <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase ${nota.statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>{nota.statusKehadiran}</span>
               </div>
             </div>
-
-            <p className="text-xs text-gray-400 font-medium animate-pulse">
-              Redirecting to home screen...
-            </p>
+            <p className="text-xs text-gray-400 font-medium animate-pulse">Redirecting to home screen...</p>
           </div>
         )}
       </div>
