@@ -27,19 +27,16 @@ export default function RekapitulasiAdmin() {
   const [isAksesDiberikan, setIsAksesDiberikan] = useState<boolean>(false);
   const [kataSandi, setKataSandi] = useState<string>("");
 
-  // Navigasi Utama Dasbor
   const [menuUtama, setMenuUtama] = useState<'INDIVIDU' | 'HARIAN' | 'PERSONEL'>('INDIVIDU');
 
   const [dataAbsensi, setDataAbsensi] = useState<Absensi[]>([]);
   const [masterPersonel, setMasterPersonel] = useState<Personel[]>([]);
   const [memuat, setMemuat] = useState<boolean>(true);
   
-  // State untuk Rekap Individu & Harian
   const [tabAktif, setTabAktif] = useState<'PESERTA' | 'ASISTEN'>('PESERTA');
   const [namaTerpilih, setNamaTerpilih] = useState<string | null>(null);
   const [tanggalTerpilih, setTanggalTerpilih] = useState<string | null>(null);
 
-  // State untuk Fitur Edit Matrix
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editId, setEditId] = useState<string>("");
   const [editNama, setEditNama] = useState<string>("");
@@ -48,11 +45,18 @@ export default function RekapitulasiAdmin() {
   const [editStatus, setEditStatus] = useState<string>("");
   const [editWaktuAsli, setEditWaktuAsli] = useState<string>("");
 
-  // State Fitur Lightbox Multi-Media
+  const [isTambahManual, setIsTambahManual] = useState<boolean>(false);
+  const [manualNama, setManualNama] = useState<string>("");
+  const [manualStatus, setManualStatus] = useState<string>("IZIN");
+  const [manualWaktu, setManualWaktu] = useState<string>(""); 
+  const [manualKeterangan, setManualKeterangan] = useState<string>("");
+  
+  const [rekomendasiManual, setRekomendasiManual] = useState<string[]>([]);
+  const [tampilkanSaranManual, setTampilkanSaranManual] = useState<boolean>(false);
+
   const [fotoLightbox, setFotoLightbox] = useState<string | null>(null);
   const [petaLightbox, setPetaLightbox] = useState<{ lat: number; lng: number } | null>(null);
 
-  // State untuk Form Tambah Personel
   const [inputNamaPersonel, setInputNamaPersonel] = useState("");
   const [inputPeranPersonel, setInputPeranPersonel] = useState("PESERTA");
 
@@ -66,12 +70,10 @@ export default function RekapitulasiAdmin() {
 
   const ambilData = async () => {
     setMemuat(true);
-    // Fetch Data Absen
     const { data: absenData, error: absenError } = await supabase.from('absensi').select('*').order('waktu_absen', { ascending: false });
     if (!absenError && absenData) setDataAbsensi(absenData as Absensi[]);
     else setDataAbsensi([]);
 
-    // Fetch Data Personel
     const { data: personelData, error: personelError } = await supabase.from('master_personel').select('*').order('nama', { ascending: true });
     if (!personelError && personelData) setMasterPersonel(personelData as Personel[]);
     
@@ -84,7 +86,6 @@ export default function RekapitulasiAdmin() {
     else { alert("Access Denied: Invalid Administrative Password!"); setKataSandi(""); }
   };
 
-  /* ================== LOGIKA CRUD PERSONEL ================== */
   const tambahPersonelDB = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputNamaPersonel.trim()) return;
@@ -105,14 +106,10 @@ export default function RekapitulasiAdmin() {
     if (!konfirmasi) return;
     setMemuat(true);
     const { error } = await supabase.from('master_personel').delete().eq('id', id);
-    if (!error) {
-      await ambilData();
-    } else {
-      alert(`Gagal Menghapus: ${error.message}`);
-    }
+    if (!error) await ambilData();
+    else alert(`Gagal Menghapus: ${error.message}`);
     setMemuat(false);
   };
-  /* ========================================================= */
 
   const hapusData = async (id: string) => {
     const konfirmasi = window.confirm("Are you sure you want to permanently delete this presence log?");
@@ -124,8 +121,69 @@ export default function RekapitulasiAdmin() {
     setMemuat(false);
   };
 
+  const handleKetikNamaManual = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nilai = e.target.value;
+    setManualNama(nilai);
+
+    if (nilai.trim() !== "") {
+      const hasilFilter = masterPersonel
+        .map(p => p.nama)
+        .filter((n) => n.toLowerCase().includes(nilai.toLowerCase()));
+      setRekomendasiManual(hasilFilter);
+      setTampilkanSaranManual(true);
+    } else {
+      setRekomendasiManual([]);
+      setTampilkanSaranManual(false);
+    }
+  };
+
+  const pilihNamaManual = (namaT: string) => {
+    setManualNama(namaT);
+    setTampilkanSaranManual(false);
+  };
+
+  const bukaModalManual = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setManualWaktu(now.toISOString().slice(0, 16)); 
+    setManualNama("");
+    setManualKeterangan("");
+    setIsTambahManual(true);
+  };
+
+  const simpanLogManual = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualNama || !manualWaktu || !manualStatus || !manualKeterangan) return alert("Harap lengkapi semua data, termasuk keterangan!");
+    setMemuat(true);
+
+    const personelTerpilih = masterPersonel.find(p => p.nama === manualNama);
+    const peranUser = personelTerpilih ? personelTerpilih.peran : 'PESERTA';
+    const wktObj = new Date(manualWaktu);
+
+    const { error } = await supabase.from('absensi').insert([{
+      nama_peserta: manualNama,
+      jenis_absen: manualStatus,
+      waktu_absen: wktObj.toISOString(),
+      peran: peranUser,
+      latitude: 0, 
+      longitude: 0, 
+      foto_url: `KET: ${manualKeterangan}` 
+    }]);
+
+    if (!error) {
+      setIsTambahManual(false);
+      setManualKeterangan("");
+      setManualNama("");
+      await ambilData();
+    } else {
+      alert(`Gagal menyimpan log manual: ${error.message}`);
+    }
+    setMemuat(false);
+  };
+
   const handleTimeChange = (newTime: string) => {
     setEditTime(newTime);
+    if (editJenis === "IZIN" || editJenis === "SAKIT" || editJenis === "ALPHA") return;
     const [jam, menit] = newTime.split(':').map(Number);
     let kalkulasiStatus = "Tepat Waktu";
     if (editJenis === "MASUK") {
@@ -136,19 +194,15 @@ export default function RekapitulasiAdmin() {
     setEditStatus(kalkulasiStatus);
   };
 
-  const handleStatusChange = (newStatus: string) => {
-    setEditStatus(newStatus);
-    if (newStatus === "Terlambat") {
-      setEditTime(editJenis === "MASUK" ? "08:45" : "13:40");
-    } else if (newStatus === "Tepat Waktu") {
-      setEditTime(editJenis === "MASUK" ? "08:00" : "13:00");
-    }
-  };
-
   const handleJenisChange = (newJenis: string) => {
     setEditJenis(newJenis);
-    setEditTime(newJenis === "MASUK" ? "08:00" : "13:00");
-    setEditStatus("Tepat Waktu");
+    if (newJenis === "IZIN") setEditStatus("Izin Resmi");
+    else if (newJenis === "SAKIT") setEditStatus("Sakit");
+    else if (newJenis === "ALPHA") setEditStatus("Tanpa Keterangan");
+    else {
+      setEditTime(newJenis === "MASUK" ? "08:00" : "13:00");
+      setEditStatus("Tepat Waktu");
+    }
   };
 
   const simpanPerubahanEdit = async () => {
@@ -183,26 +237,36 @@ export default function RekapitulasiAdmin() {
         td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; vertical-align: middle; }
         .center { text-align: center; }
         .bold { font-weight: bold; }
+        .italic { font-style: italic; color: #64748b; }
       </style>
     `;
 
-    const tableRows = dataSesuaiTab.map(d => `
-      <tr>
-        <td>${d.id}</td>
-        <td class="bold">${d.nama_peserta}</td>
-        <td>${d.peran === 'ASISTEN' ? 'Staff / Asisten PLTS' : 'Intern / Peserta KP'}</td>
-        <td>${d.jenis_absen === "MASUK" ? "Morning Shift" : "Afternoon Shift"}</td>
-        <td>${new Date(d.waktu_absen).toLocaleString('id-ID')} WIB</td>
-        <td class="bold" style="color: ${kalkulasiStatusWaktu(d.waktu_absen, d.jenis_absen) === 'Tepat Waktu' ? '#16a34a' : '#dc2626'}">
-          ${kalkulasiStatusWaktu(d.waktu_absen, d.jenis_absen)}
-        </td>
-        <td>${d.latitude || '-'}</td>
-        <td>${d.longitude || '-'}</td>
-        <td class="center" width="70" height="70">
-          ${d.foto_url ? `<img src="${d.foto_url}" width="60" height="60" style="display:block; margin:auto; rounded-radius: 8px;" />` : '-'}
-        </td>
-      </tr>
-    `).join("");
+    const tableRows = dataSesuaiTab.map(d => {
+      const isManual = d.foto_url && d.foto_url.startsWith("KET: ");
+      const keteranganManual = isManual ? d.foto_url.replace("KET: ", "") : "-";
+
+      return `
+        <tr>
+          <td>${d.id}</td>
+          <td class="bold">${d.nama_peserta}</td>
+          <td>${d.peran === 'ASISTEN' ? 'Staff / Asisten PLTS' : 'Intern / Peserta KP'}</td>
+          <td>${d.jenis_absen === "MASUK" ? "Morning Shift" : d.jenis_absen === "SIANG" ? "Afternoon Shift" : d.jenis_absen}</td>
+          <td>${new Date(d.waktu_absen).toLocaleString('id-ID')} WIB</td>
+          <td class="bold">
+            ${kalkulasiStatusWaktu(d.waktu_absen, d.jenis_absen)}
+          </td>
+          <td>${!isManual ? d.latitude : '-'}</td>
+          <td>${!isManual ? d.longitude : '-'}</td>
+          <td class="center" width="120">
+            ${!isManual ? 
+              (d.foto_url ? `<img src="${d.foto_url}" width="60" height="60" style="display:block; margin:auto; rounded-radius: 8px;" />` : '-') 
+              : 
+              `<span class="italic">${keteranganManual}</span>`
+            }
+          </td>
+        </tr>
+      `
+    }).join("");
 
     const excelTemplate = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -212,7 +276,7 @@ export default function RekapitulasiAdmin() {
           <thead>
             <tr>
               <th>ID Ledger</th><th>Personnel Name</th><th>System Role</th><th>Log Classification</th>
-              <th>Timestamp</th><th>Time Compliance</th><th>Latitude</th><th>Longitude</th><th>Visual Verification (Photo)</th>
+              <th>Timestamp</th><th>Time Compliance</th><th>Latitude</th><th>Longitude</th><th>Visual / Keterangan Manual</th>
             </tr>
           </thead>
           <tbody>${tableRows}</tbody>
@@ -232,20 +296,15 @@ export default function RekapitulasiAdmin() {
     document.body.removeChild(link);
   };
 
-  const bukaModalEdit = (row: Absensi) => {
-    const waktu = new Date(row.waktu_absen);
-    const jamStr = String(waktu.getHours()).padStart(2, '0');
-    const menitStr = String(waktu.getMinutes()).padStart(2, '0');
-    setEditId(row.id); setEditNama(row.nama_peserta); setEditJenis(row.jenis_absen);
-    setEditTime(`${jamStr}:${menitStr}`); setEditWaktuAsli(row.waktu_absen);
-    setEditStatus(kalkulasiStatusWaktu(row.waktu_absen, row.jenis_absen));
-    setIsEditing(true);
-  };
-
   const kalkulasiStatusWaktu = (waktuISO: string, jenis: string) => {
+    if (jenis === 'IZIN') return "Izin (Approved)";
+    if (jenis === 'SAKIT') return "Sakit (Sick Leave)";
+    if (jenis === 'ALPHA') return "Alpha (No Notice)";
+    
     const waktu = new Date(waktuISO);
     const jam = waktu.getHours();
     const menit = waktu.getMinutes();
+    
     if (jenis === "MASUK") {
       if (jam > BATAS_PAGI.jam || (jam === BATAS_PAGI.jam && menit > BATAS_PAGI.menit)) return "Terlambat";
       return "Tepat Waktu";
@@ -254,6 +313,21 @@ export default function RekapitulasiAdmin() {
       return "Tepat Waktu";
     }
     return "-";
+  };
+
+  const renderVisualLabel = (jenis: string) => {
+    if (jenis === 'MASUK') return { teks: 'PAGI', warna: 'bg-blue-50 text-blue-600 border-blue-200' };
+    if (jenis === 'SIANG') return { teks: 'SIANG', warna: 'bg-amber-50 text-amber-600 border-amber-200' };
+    if (jenis === 'IZIN') return { teks: 'IZIN', warna: 'bg-purple-50 text-purple-600 border-purple-200' };
+    if (jenis === 'SAKIT') return { teks: 'SAKIT', warna: 'bg-orange-50 text-orange-600 border-orange-200' };
+    if (jenis === 'ALPHA') return { teks: 'ALPHA', warna: 'bg-rose-50 text-rose-600 border-rose-200' };
+    return { teks: jenis, warna: 'bg-slate-50 text-slate-600 border-slate-200' };
+  };
+
+  const renderVisualStatus = (status: string) => {
+    if (status === 'Tepat Waktu') return 'bg-emerald-50 text-emerald-600';
+    if (status === 'Terlambat') return 'bg-rose-50 text-rose-600';
+    return 'bg-slate-100 text-slate-600'; 
   };
 
   if (!isMounted) {
@@ -284,8 +358,9 @@ export default function RekapitulasiAdmin() {
     );
   }
 
-  // --- LOGIKA GROUPING UNTUK MENU "INDIVIDU" ---
+  // --- LOGIKA DATA: INDIVIDU ---
   const dataSesuaiTab = dataAbsensi.filter(d => (d.peran || 'PESERTA') === tabAktif);
+  
   const dataIndividu = dataSesuaiTab.reduce((hasil, baris) => {
     const nama = baris.nama_peserta;
     if (!hasil[nama]) hasil[nama] = [];
@@ -294,10 +369,7 @@ export default function RekapitulasiAdmin() {
   }, {} as Record<string, Absensi[]>);
   const daftarNamaIndividu = Object.keys(dataIndividu).sort();
 
-  // Data Detail yang Dipilih
   const rekapDetail = namaTerpilih ? (dataIndividu[namaTerpilih] || []) : [];
-  
-  // PEMBARUAN: Mengelompokkan ulang rekapDetail berdasarkan tanggal untuk separator
   const rekapDetailPerHari = rekapDetail.reduce((hasil, baris) => {
     const tanggal = new Date(baris.waktu_absen).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     if (!hasil[tanggal]) hasil[tanggal] = [];
@@ -305,7 +377,7 @@ export default function RekapitulasiAdmin() {
     return hasil;
   }, {} as Record<string, Absensi[]>);
 
-  // --- LOGIKA GROUPING UNTUK MENU "HARIAN" ---
+  // --- LOGIKA DATA: HARIAN ---
   const dataHarian = dataAbsensi.reduce((hasil, baris) => {
     const tanggal = new Date(baris.waktu_absen).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     if (!hasil[tanggal]) hasil[tanggal] = [];
@@ -314,6 +386,27 @@ export default function RekapitulasiAdmin() {
   }, {} as Record<string, Absensi[]>);
   const daftarTanggalHarian = Object.keys(dataHarian);
   const rekapTanggalDetail = tanggalTerpilih ? (dataHarian[tanggalTerpilih] || []) : [];
+
+  // --- LOGIKA LIVE TRACKER DATA ---
+  const isToday = (dateString: string) => {
+    const d = new Date(dateString);
+    const today = new Date();
+    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+  };
+
+  const absenHariIni = dataAbsensi.filter(d => isToday(d.waktu_absen));
+  const personelSesuaiTab = masterPersonel.filter(p => p.peran === tabAktif);
+
+  // PEMBARUAN: Mengumpulkan seluruh log per personel agar bisa dicek Pagi/Siang
+  const mapAbsenHariIni = absenHariIni.reduce((acc, curr) => {
+    if (!acc[curr.nama_peserta]) acc[curr.nama_peserta] = [];
+    acc[curr.nama_peserta].push(curr);
+    return acc;
+  }, {} as Record<string, Absensi[]>);
+
+  // Hitung jumlah yang sudah hadir (minimal ada 1 log)
+  const jumlahHadir = personelSesuaiTab.filter(p => mapAbsenHariIni[p.nama]?.length > 0).length;
+  const persentaseHadir = personelSesuaiTab.length > 0 ? Math.round((jumlahHadir / personelSesuaiTab.length) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-[#FDFDFD] font-sans text-slate-900 selection:bg-blue-100 pb-16 relative">
@@ -328,13 +421,16 @@ export default function RekapitulasiAdmin() {
             </div>
           </div>
           <div className="flex gap-3">
+            <button onClick={bukaModalManual} className="flex items-center gap-2 text-sm font-bold text-white bg-slate-900 hover:bg-black px-5 py-2.5 rounded-full transition-all shadow-md">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4"></path></svg>
+              <span className="hidden sm:block">Inject Log Manual</span>
+            </button>
             <button onClick={eksporKeExcel} className="flex items-center gap-2 text-sm font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 px-5 py-2.5 rounded-full transition-all shadow-sm">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-              <span className="hidden sm:block">Export to Excel</span>
+              <span className="hidden sm:block">Export Excel</span>
             </button>
             <button onClick={ambilData} className="flex items-center gap-2 text-sm font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-5 py-2.5 rounded-full transition-all shadow-sm">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-              <span className="hidden sm:block">Synchronize Data</span>
             </button>
           </div>
         </div>
@@ -342,10 +438,9 @@ export default function RekapitulasiAdmin() {
 
       <main className="max-w-7xl mx-auto px-6 mt-10">
         
-        {/* NAVIGASI UTAMA (3 MENU BARU) */}
-        <div className="flex flex-wrap gap-2 bg-slate-100/70 p-2 rounded-[1.25rem] mb-10 w-fit border border-slate-200/50">
-          <button onClick={() => {setMenuUtama('INDIVIDU'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'INDIVIDU' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Rekap per Individu</button>
-          <button onClick={() => {setMenuUtama('HARIAN'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'HARIAN' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>Rekap Harian (Date)</button>
+        <div className="flex flex-wrap gap-2 bg-slate-100/70 p-2 rounded-[1.25rem] mb-8 w-fit border border-slate-200/50">
+          <button onClick={() => {setMenuUtama('INDIVIDU'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'INDIVIDU' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Individual Report</button>
+          <button onClick={() => {setMenuUtama('HARIAN'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'HARIAN' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>Daily Report</button>
           <button onClick={() => {setMenuUtama('PERSONEL'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'PERSONEL' ? 'bg-slate-900 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}>Personal Management</button>
         </div>
 
@@ -358,27 +453,115 @@ export default function RekapitulasiAdmin() {
               <div className="animate-fade-in">
                 {namaTerpilih === null ? (
                   <>
-                    <div className="inline-flex gap-2 mb-8">
+                    <div className="inline-flex gap-2 mb-6">
                       <button onClick={() => setTabAktif('PESERTA')} className={`px-5 py-2 rounded-full font-bold text-xs uppercase tracking-wider transition-all ${tabAktif === 'PESERTA' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>Peserta KP</button>
                       <button onClick={() => setTabAktif('ASISTEN')} className={`px-5 py-2 rounded-full font-bold text-xs uppercase tracking-wider transition-all ${tabAktif === 'ASISTEN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>Asisten PLTS</button>
                     </div>
-                    {daftarNamaIndividu.length === 0 ? (
-                      <div className="text-center py-20 text-slate-400">Belum ada data absensi untuk kategori ini.</div>
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {daftarNamaIndividu.map((nama) => (
-                          <div key={nama} onClick={() => setNamaTerpilih(nama)} className="bg-white p-7 rounded-[1.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 cursor-pointer transition-all flex flex-col justify-between h-full">
-                            <div>
-                              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-5 border ${tabAktif === 'PESERTA' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
-                              </div>
-                              <h2 className="text-lg font-bold text-slate-900 leading-tight">{nama}</h2>
-                            </div>
-                            <p className="text-xs text-slate-500 font-medium mt-6">Contains <span className="font-bold">{dataIndividu[nama].length}</span> historical logs</p>
-                          </div>
-                        ))}
+
+                    {/* PEMBARUAN UTAMA: LIVE TRACKER STATUS MONITOR DENGAN LOGIKA WARNA */}
+                    <div className="mb-10 bg-[#fafafa]/40 backdrop-blur-sm rounded-[2rem] border border-slate-200/60 p-6 sm:p-8">
+                      <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-6">
+                        <div>
+                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest block mb-0.5">Real-Time Attendance Stream</span>
+                          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight">LIVE STATUS</h2>
+                        </div>
+                        <div className="flex items-center gap-3 bg-white border border-slate-100 px-4 py-2 rounded-2xl shadow-sm">
+                          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></div>
+                          <span className="text-xs font-bold text-slate-700 font-mono">{persentaseHadir}% Present</span>
+                          <span className="text-slate-200">|</span>
+                          <span className="text-xs font-semibold text-slate-400">{jumlahHadir} of {personelSesuaiTab.length} Active</span>
+                        </div>
                       </div>
-                    )}
+
+                      <div className="w-full bg-slate-100 rounded-full h-1 mb-8 overflow-hidden">
+                        <div className="bg-emerald-500 h-1 rounded-full transition-all duration-1000 ease-out" style={{ width: `${persentaseHadir}%` }}></div>
+                      </div>
+
+                      {/* Grid Modern & Logika Warna */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                        {personelSesuaiTab.map(p => {
+                          const logs = mapAbsenHariIni[p.nama] || [];
+                          const sudahHadir = logs.length > 0;
+                          
+                          // Penentuan Hierarki Log
+                          const logSiang = logs.find(l => l.jenis_absen === 'SIANG');
+                          const logPagi = logs.find(l => l.jenis_absen === 'MASUK');
+                          const logLainnya = logs.find(l => ['IZIN', 'SAKIT', 'ALPHA'].includes(l.jenis_absen));
+
+                          let statusAktif = null;
+                          let warnaDot = 'bg-slate-200';
+                          let warnaBorder = 'border-slate-100 hover:border-slate-200/80 shadow-[0_2px_4px_rgba(0,0,0,0.01)]';
+                          let warnaTeks = 'text-slate-400 font-medium';
+                          let warnaInfo = '';
+                          let teksInfo = '';
+
+                          if (logSiang) {
+                            statusAktif = logSiang;
+                            warnaDot = 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+                            warnaBorder = 'border-emerald-500/20 shadow-sm hover:border-emerald-500/40 bg-emerald-50/10';
+                            warnaTeks = 'text-slate-800';
+                            warnaInfo = 'text-emerald-600';
+                            teksInfo = 'Full-Day Attendance';
+                          } else if (logPagi) {
+                            statusAktif = logPagi;
+                            warnaDot = 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]';
+                            warnaBorder = 'border-amber-500/30 shadow-sm hover:border-amber-500/50 bg-amber-50/10';
+                            warnaTeks = 'text-slate-800';
+                            warnaInfo = 'text-amber-600';
+                            teksInfo = 'Morning Shift Only';
+                          } else if (logLainnya) {
+                            statusAktif = logLainnya;
+                            if (logLainnya.jenis_absen === 'IZIN') {
+                              warnaDot = 'bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]';
+                              warnaBorder = 'border-purple-500/30 shadow-sm bg-purple-50/10';
+                              warnaInfo = 'text-purple-600';
+                            } else if (logLainnya.jenis_absen === 'SAKIT') {
+                              warnaDot = 'bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]';
+                              warnaBorder = 'border-orange-500/30 shadow-sm bg-orange-50/10';
+                              warnaInfo = 'text-orange-600';
+                            } else {
+                              warnaDot = 'bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.5)]';
+                              warnaBorder = 'border-rose-500/30 shadow-sm bg-rose-50/10';
+                              warnaInfo = 'text-rose-600';
+                            }
+                            warnaTeks = 'text-slate-800';
+                            teksInfo = `Status: ${logLainnya.jenis_absen}`;
+                          }
+
+                          const jamPresensi = statusAktif ? new Date(statusAktif.waktu_absen).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : "";
+
+                          return (
+                            <div key={p.id} className={`p-4 rounded-2xl border transition-all duration-300 flex items-center justify-between ${warnaBorder}`}>
+                              <div className="flex flex-col min-w-0 pr-2">
+                                <span className={`text-sm truncate ${warnaTeks}`}>
+                                  {p.nama}
+                                </span>
+                                {sudahHadir && (
+                                  <span className={`text-[10px] font-bold tracking-wider uppercase mt-0.5 ${warnaInfo}`}>
+                                    {jamPresensi} • {teksInfo}
+                                  </span>
+                                )}
+                              </div>
+                              <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${warnaDot}`}></div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                      {daftarNamaIndividu.map((nama) => (
+                        <div key={nama} onClick={() => setNamaTerpilih(nama)} className="bg-white p-7 rounded-[1.5rem] border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-1 cursor-pointer transition-all flex flex-col justify-between h-full">
+                          <div>
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center mb-5 border ${tabAktif === 'PESERTA' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
+                            </div>
+                            <h2 className="text-lg font-bold text-slate-900 leading-tight">{nama}</h2>
+                          </div>
+                          <p className="text-xs text-slate-500 font-medium mt-6">Contains <span className="font-bold">{dataIndividu[nama].length}</span> historical logs</p>
+                        </div>
+                      ))}
+                    </div>
                   </>
                 ) : (
                   <div className="animate-fade-in max-w-6xl mx-auto">
@@ -388,7 +571,6 @@ export default function RekapitulasiAdmin() {
                     </button>
                     <h1 className="text-3xl font-extrabold text-slate-900 mb-8">{namaTerpilih}</h1>
                     
-                    {/* PEMBARUAN: Loop rendering berdasarkan pengelompokan tanggal */}
                     <div className="flex flex-col gap-10">
                       {Object.keys(rekapDetailPerHari).map((tanggal) => (
                         <div key={tanggal} className="flex flex-col">
@@ -402,10 +584,9 @@ export default function RekapitulasiAdmin() {
                               <thead className="bg-slate-50/50 text-xs text-slate-500 uppercase font-bold tracking-wider">
                                 <tr>
                                   <th className="px-6 py-4">Waktu Absen</th>
-                                  <th className="px-6 py-4 text-center">Log Classification</th>
+                                  <th className="px-6 py-4 text-center">Log Status</th>
                                   <th className="px-6 py-4 text-center">Time Compliance</th>
-                                  <th className="px-6 py-4 text-center">Location</th>
-                                  <th className="px-6 py-4 text-center">Photo</th>
+                                  <th className="px-6 py-4 text-center">Map & Visual / Keterangan</th>
                                   <th className="px-6 py-4 text-center">Control</th>
                                 </tr>
                               </thead>
@@ -413,27 +594,38 @@ export default function RekapitulasiAdmin() {
                                 {rekapDetailPerHari[tanggal].map((row) => {
                                   const waktu = new Date(row.waktu_absen);
                                   const statusKehadiran = kalkulasiStatusWaktu(row.waktu_absen, row.jenis_absen);
+                                  const labelUi = renderVisualLabel(row.jenis_absen);
+                                  const isManual = row.foto_url?.startsWith("KET: ");
+
                                   return (
-                                    <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
+                                    <tr key={row.id} className={`hover:bg-slate-50/50 transition-colors group ${isManual ? 'bg-slate-50/30' : ''}`}>
                                       <td className="px-6 py-5 font-semibold text-slate-700">
                                         {waktu.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB
                                       </td>
                                       <td className="px-6 py-5 text-center">
-                                        <span className={`inline-block px-3 py-1 rounded text-[10px] font-extrabold uppercase tracking-wider ${row.jenis_absen === 'MASUK' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'}`}>
-                                          {row.jenis_absen === 'MASUK' ? 'Pagi' : 'Siang'}
+                                        <span className={`inline-block px-3 py-1 rounded text-[10px] font-extrabold border uppercase tracking-wider ${labelUi.warna}`}>
+                                          {labelUi.teks}
                                         </span>
                                       </td>
                                       <td className="px-6 py-5 text-center">
-                                        <span className={`px-2.5 py-1 rounded text-[10px] font-extrabold uppercase ${statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                          {statusKehadiran === 'Tepat Waktu' ? 'On Time' : 'Late'}
+                                        <span className={`px-2.5 py-1 rounded text-[10px] font-extrabold uppercase ${renderVisualStatus(statusKehadiran)}`}>
+                                          {statusKehadiran}
                                         </span>
                                       </td>
+                                      
                                       <td className="px-6 py-5 text-center">
-                                        <button onClick={() => setPetaLightbox({ lat: row.latitude, lng: row.longitude })} className="text-blue-600 font-bold text-xs bg-blue-50 hover:bg-blue-100 px-3 py-2 rounded-lg transition-all">Map</button>
+                                        {isManual ? (
+                                          <span className="text-xs font-semibold text-slate-500 italic whitespace-pre-wrap">
+                                            {row.foto_url.replace("KET: ", "")}
+                                          </span>
+                                        ) : (
+                                          <div className="flex justify-center gap-3 items-center">
+                                            <button onClick={() => setPetaLightbox({ lat: row.latitude, lng: row.longitude })} className="text-blue-600 font-bold text-xs bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">Map</button>
+                                            <img src={row.foto_url} alt="Bukti" className="w-8 h-8 object-cover rounded-lg shadow-sm border border-slate-200 cursor-pointer hover:scale-110 transition-all" onClick={() => setFotoLightbox(row.foto_url)} />
+                                          </div>
+                                        )}
                                       </td>
-                                      <td className="px-6 py-5 flex justify-center">
-                                        <img src={row.foto_url} alt="Foto" className="w-10 h-10 object-cover rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:scale-110 transition-all" onClick={() => setFotoLightbox(row.foto_url)} />
-                                      </td>
+
                                       <td className="px-6 py-5 text-center">
                                         <div className="flex justify-center gap-2">
                                           <button onClick={() => bukaModalEdit(row)} className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 p-2 rounded-lg transition-all" title="Edit"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>
@@ -471,7 +663,7 @@ export default function RekapitulasiAdmin() {
                               </div>
                               <h2 className="text-lg font-bold text-slate-900 leading-tight">{tgl}</h2>
                             </div>
-                            <p className="text-xs text-slate-500 font-medium mt-6">Merekam <span className="font-bold">{dataHarian[tgl].length}</span> personel masuk</p>
+                            <p className="text-xs text-slate-500 font-medium mt-6">Merekam <span className="font-bold">{dataHarian[tgl].length}</span> personel</p>
                           </div>
                         ))}
                       </div>
@@ -490,32 +682,45 @@ export default function RekapitulasiAdmin() {
                           <tr>
                             <th className="px-6 py-4">Nama Personel</th>
                             <th className="px-6 py-4 text-center">Peran</th>
-                            <th className="px-6 py-4 text-center">Waktu Absen</th>
+                            <th className="px-6 py-4 text-center">Waktu & Tipe Log</th>
                             <th className="px-6 py-4 text-center">Status</th>
-                            <th className="px-6 py-4 text-center">Map & Photo</th>
+                            <th className="px-6 py-4 text-center">Map & Visual / Keterangan</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                           {rekapTanggalDetail.map((row) => {
                             const waktu = new Date(row.waktu_absen);
                             const statusKehadiran = kalkulasiStatusWaktu(row.waktu_absen, row.jenis_absen);
+                            const labelUi = renderVisualLabel(row.jenis_absen);
+                            const isManual = row.foto_url?.startsWith("KET: ");
+
                             return (
-                              <tr key={row.id} className="hover:bg-slate-50/50 transition-colors group">
+                              <tr key={row.id} className={`hover:bg-slate-50/50 transition-colors group ${isManual ? 'bg-slate-50/30' : ''}`}>
                                 <td className="px-6 py-5 font-bold text-slate-700">{row.nama_peserta}</td>
                                 <td className="px-6 py-5 text-center">
                                   <span className={`inline-block px-2 py-1 rounded text-[10px] font-bold uppercase ${row.peran === 'ASISTEN' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{row.peran}</span>
                                 </td>
                                 <td className="px-6 py-5 text-center font-semibold text-slate-600">
                                   {waktu.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })} WIB 
-                                  <span className="ml-2 text-[10px] bg-slate-100 px-2 py-0.5 rounded font-bold">{row.jenis_absen === 'MASUK' ? 'PAGI' : 'SIANG'}</span>
+                                  <span className={`ml-2 text-[10px] border px-2 py-0.5 rounded font-bold ${labelUi.warna}`}>{labelUi.teks}</span>
                                 </td>
                                 <td className="px-6 py-5 text-center">
-                                  <span className={`px-2.5 py-1 rounded text-[10px] font-extrabold uppercase ${statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>{statusKehadiran === 'Tepat Waktu' ? 'On Time' : 'Late'}</span>
+                                  <span className={`px-2.5 py-1 rounded text-[10px] font-extrabold uppercase ${renderVisualStatus(statusKehadiran)}`}>{statusKehadiran}</span>
                                 </td>
-                                <td className="px-6 py-5 flex justify-center gap-3 items-center">
-                                  <button onClick={() => setPetaLightbox({ lat: row.latitude, lng: row.longitude })} className="text-blue-600 font-bold text-xs bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">Map</button>
-                                  <img src={row.foto_url} alt="Foto" className="w-8 h-8 object-cover rounded-lg shadow-sm border cursor-pointer hover:scale-110 transition-all" onClick={() => setFotoLightbox(row.foto_url)} />
+                                
+                                <td className="px-6 py-5 text-center">
+                                  {isManual ? (
+                                    <span className="text-xs font-semibold text-slate-500 italic whitespace-pre-wrap">
+                                      {row.foto_url.replace("KET: ", "")}
+                                    </span>
+                                  ) : (
+                                    <div className="flex justify-center gap-3 items-center">
+                                      <button onClick={() => setPetaLightbox({ lat: row.latitude, lng: row.longitude })} className="text-blue-600 font-bold text-xs bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-all">Map</button>
+                                      <img src={row.foto_url} alt="Foto" className="w-8 h-8 object-cover rounded-lg shadow-sm border cursor-pointer hover:scale-110 transition-all" onClick={() => setFotoLightbox(row.foto_url)} />
+                                    </div>
+                                  )}
                                 </td>
+
                               </tr>
                             )
                           })}
@@ -530,8 +735,6 @@ export default function RekapitulasiAdmin() {
             {/* ========================================= MENU 3: MANAJEMEN PERSONEL ========================================= */}
             {menuUtama === 'PERSONEL' && (
               <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
-                
-                {/* Form Tambah Personel */}
                 <div className="lg:col-span-1">
                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 sticky top-28">
                     <h2 className="text-lg font-extrabold text-slate-900 mb-1">Tambah Personel</h2>
@@ -554,7 +757,6 @@ export default function RekapitulasiAdmin() {
                   </div>
                 </div>
 
-                {/* List Data Personel Aktif */}
                 <div className="lg:col-span-2">
                   <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
                     <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
@@ -589,40 +791,86 @@ export default function RekapitulasiAdmin() {
                     )}
                   </div>
                 </div>
-
               </div>
             )}
           </>
         )}
       </main>
 
-      {/* MODAL LIGHTBOX FOTO */}
-      {fotoLightbox && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setFotoLightbox(null)}>
-          <div className="relative max-w-3xl w-full flex justify-center items-center">
-            <img src={fotoLightbox} alt="Foto Diperbesar" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl border border-white/20" onClick={(e) => e.stopPropagation()} />
-            <button className="absolute -top-4 -right-4 bg-slate-900 text-white w-10 h-10 rounded-full font-bold shadow-lg hover:bg-black border border-slate-700 transition-all flex items-center justify-center" onClick={() => setFotoLightbox(null)} title="Tutup (Esc)">✕</button>
+      {/* ================= MODAL INJECT LOG MANUAL (AUTOCOMPLETE + DATETIME) ================= */}
+      {isTambahManual && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl border border-slate-100 relative">
+            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Inject Log Manual</h3>
+            <p className="text-xs text-slate-400 font-medium uppercase tracking-wider mb-6">Penambahan Absen Izin / Sakit / Alpha / Masuk</p>
+            
+            <form onSubmit={simpanLogManual} className="flex flex-col gap-5">
+              
+              <div className="relative">
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Cari Nama Personel</label>
+                <input 
+                  type="text" 
+                  value={manualNama} 
+                  onChange={handleKetikNamaManual}
+                  onFocus={() => manualNama && setTampilkanSaranManual(true)}
+                  required 
+                  placeholder="Ketik inisial nama..." 
+                  className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold text-black focus:outline-none focus:ring-2 focus:ring-blue-500/20" 
+                />
+                {tampilkanSaranManual && rekomendasiManual.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full bg-white border border-slate-100 rounded-xl shadow-xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
+                    {rekomendasiManual.map((namaSaran) => (
+                      <div
+                        key={namaSaran}
+                        onClick={() => pilihNamaManual(namaSaran)}
+                        className="p-3.5 hover:bg-slate-50 text-slate-800 text-sm cursor-pointer border-b border-slate-50 last:border-none transition-colors"
+                      >
+                        {namaSaran}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Pilih Waktu (Tgl & Jam)</label>
+                  <input type="datetime-local" value={manualWaktu} onChange={(e) => setManualWaktu(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-black" />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Tipe Log</label>
+                  <select value={manualStatus} onChange={(e) => setManualStatus(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-black">
+                    <option value="MASUK">Hadir Pagi (Manual)</option>
+                    <option value="SIANG">Hadir Siang (Manual)</option>
+                    <option value="IZIN">Izin Resmi</option>
+                    <option value="SAKIT">Sakit</option>
+                    <option value="ALPHA">Alpha</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Keterangan Khusus</label>
+                <textarea 
+                  value={manualKeterangan} 
+                  onChange={(e) => setManualKeterangan(e.target.value)} 
+                  required 
+                  rows={2}
+                  placeholder="Contoh: Mengikuti acara keluarga, lupa absen web..." 
+                  className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold text-black focus:outline-none focus:ring-2 focus:ring-blue-500/20 resize-none" 
+                />
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button type="button" onClick={() => setIsTambahManual(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-xl text-sm transition-all">Batal</button>
+                <button type="submit" className="flex-1 bg-slate-900 hover:bg-black text-white font-bold py-3.5 rounded-xl text-sm shadow-md transition-all">Submit Log</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* MODAL LIGHTBOX PETA (IN-APP MAP PREVIEW) */}
-      {petaLightbox && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setPetaLightbox(null)}>
-          <div className="relative w-full max-w-3xl bg-white p-2 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <button className="absolute -top-4 -right-4 bg-rose-600 text-white w-10 h-10 rounded-full font-bold shadow-lg hover:bg-rose-700 border-2 border-white transition-all flex items-center justify-center z-10" onClick={() => setPetaLightbox(null)}>✕</button>
-            <div className="w-full rounded-xl overflow-hidden h-[60vh] bg-slate-100 flex items-center justify-center relative">
-              <iframe width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen src={`https://maps.google.com/maps?q=$${petaLightbox.lat},${petaLightbox.lng}&z=16&output=embed`}></iframe>
-            </div>
-            <div className="p-4 text-center bg-white rounded-b-xl">
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Koordinat Geografis Tercatat</p>
-              <p className="text-sm font-mono text-slate-800 mt-1">{petaLightbox.lat}, {petaLightbox.lng}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL INTERAKTIF LEVEL PREMIUM (MODIFY MATRIX) */}
+      {/* MODAL EDIT MATRIX */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl border border-slate-100 relative">
@@ -633,10 +881,13 @@ export default function RekapitulasiAdmin() {
                 <input type="text" value={editNama} onChange={(e) => setEditNama(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold text-black" />
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Log Shift</label>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Log Classification</label>
                 <select value={editJenis} onChange={(e) => handleJenisChange(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-black">
-                  <option value="MASUK">Morning Shift</option>
-                  <option value="SIANG">Afternoon Shift</option>
+                  <option value="MASUK">Morning Shift (Pagi)</option>
+                  <option value="SIANG">Afternoon Shift (Siang)</option>
+                  <option value="IZIN">Izin Resmi</option>
+                  <option value="SAKIT">Sakit</option>
+                  <option value="ALPHA">Alpha</option>
                 </select>
               </div>
               <div>
@@ -645,15 +896,34 @@ export default function RekapitulasiAdmin() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Compliance Status</label>
-                <select value={editStatus} onChange={(e) => handleStatusChange(e.target.value)} className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-black">
-                  <option value="Tepat Waktu">On Time</option>
-                  <option value="Terlambat">Late</option>
-                </select>
+                <input type="text" value={editStatus} readOnly className="w-full bg-slate-100 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-slate-500 cursor-not-allowed" />
               </div>
               <div className="flex gap-3 mt-4">
                 <button onClick={() => setIsEditing(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-xl text-sm">Dismiss</button>
                 <button onClick={simpanPerubahanEdit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm">Commit Changes</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX FOTO */}
+      {fotoLightbox && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setFotoLightbox(null)}>
+          <div className="relative max-w-3xl w-full flex justify-center items-center">
+            <img src={fotoLightbox} alt="Foto Diperbesar" className="max-w-full max-h-[85vh] rounded-2xl shadow-2xl border border-white/20" onClick={(e) => e.stopPropagation()} />
+            <button className="absolute -top-4 -right-4 bg-slate-900 text-white w-10 h-10 rounded-full font-bold shadow-lg hover:bg-black border border-slate-700 transition-all flex items-center justify-center" onClick={() => setFotoLightbox(null)}>✕</button>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL LIGHTBOX PETA */}
+      {petaLightbox && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in" onClick={() => setPetaLightbox(null)}>
+          <div className="relative w-full max-w-3xl bg-white p-2 rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <button className="absolute -top-4 -right-4 bg-rose-600 text-white w-10 h-10 rounded-full font-bold shadow-lg hover:bg-rose-700 border-2 border-white transition-all flex items-center justify-center z-10" onClick={() => setPetaLightbox(null)}>✕</button>
+            <div className="w-full rounded-xl overflow-hidden h-[60vh] bg-slate-100 flex items-center justify-center relative">
+              <iframe width="100%" height="100%" style={{ border: 0 }} loading="lazy" allowFullScreen src={`https://maps.google.com/maps?q=${petaLightbox.lat},${petaLightbox.lng}&z=16&output=embed`}></iframe>
             </div>
           </div>
         </div>
