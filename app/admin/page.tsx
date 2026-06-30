@@ -22,15 +22,39 @@ interface Personel {
   peran: string;
 }
 
+// Tambahan Interface untuk Fitur Tugas
+interface Tugas {
+  id: string;
+  nama_tugas: string;
+  deadline: string;
+  keterangan_tugas: string;
+}
+
+interface Pengumpulan {
+  id: string;
+  tugas_id: string;
+  nama_peserta: string;
+  waktu_pengumpulan: string;
+  link_tautan: string;
+  status_waktu: string;
+}
+
 export default function RekapitulasiAdmin() {
   const [isMounted, setIsMounted] = useState(false);
   const [isAksesDiberikan, setIsAksesDiberikan] = useState<boolean>(false);
   const [kataSandi, setKataSandi] = useState<string>("");
 
-  const [menuUtama, setMenuUtama] = useState<'INDIVIDU' | 'HARIAN' | 'PERSONEL'>('INDIVIDU');
+  // Tambahan menu TUGAS pada navigasi
+  const [menuUtama, setMenuUtama] = useState<'INDIVIDU' | 'HARIAN' | 'PERSONEL' | 'TUGAS'>('INDIVIDU');
 
   const [dataAbsensi, setDataAbsensi] = useState<Absensi[]>([]);
   const [masterPersonel, setMasterPersonel] = useState<Personel[]>([]);
+  
+  // State untuk Fitur Tugas
+  const [dataTugas, setDataTugas] = useState<Tugas[]>([]);
+  const [dataPengumpulan, setDataPengumpulan] = useState<Pengumpulan[]>([]);
+  const [tugasTerpilih, setTugasTerpilih] = useState<string | null>(null);
+  
   const [memuat, setMemuat] = useState<boolean>(true);
   
   const [tabAktif, setTabAktif] = useState<'PESERTA' | 'ASISTEN'>('PESERTA');
@@ -60,6 +84,11 @@ export default function RekapitulasiAdmin() {
   const [inputNamaPersonel, setInputNamaPersonel] = useState("");
   const [inputPeranPersonel, setInputPeranPersonel] = useState("PESERTA");
 
+  // State Form Pembuatan Tugas
+  const [inputNamaTugas, setInputNamaTugas] = useState("");
+  const [inputDeadlineTugas, setInputDeadlineTugas] = useState("");
+  const [inputKeteranganTugas, setInputKeteranganTugas] = useState("");
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
@@ -77,6 +106,13 @@ export default function RekapitulasiAdmin() {
     const { data: personelData, error: personelError } = await supabase.from('master_personel').select('*').order('nama', { ascending: true });
     if (!personelError && personelData) setMasterPersonel(personelData as Personel[]);
     
+    // Fetch Data Tugas & Pengumpulan
+    const { data: tugasData } = await supabase.from('master_tugas').select('*').order('deadline', { ascending: true });
+    if (tugasData) setDataTugas(tugasData as Tugas[]);
+
+    const { data: kumpulData } = await supabase.from('pengumpulan_tugas').select('*').order('waktu_pengumpulan', { ascending: false });
+    if (kumpulData) setDataPengumpulan(kumpulData as Pengumpulan[]);
+
     setMemuat(false);
   };
 
@@ -85,6 +121,70 @@ export default function RekapitulasiAdmin() {
     if (kataSandi === "afiqganteng") setIsAksesDiberikan(true);
     else { alert("Access Denied: Invalid Administrative Password!"); setKataSandi(""); }
   };
+
+  /* ================== LOGIKA TUGAS ================== */
+  const tambahTugasDB = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputNamaTugas.trim() || !inputDeadlineTugas) return;
+    setMemuat(true);
+
+    const { error } = await supabase.from('master_tugas').insert([{
+      nama_tugas: inputNamaTugas,
+      deadline: new Date(inputDeadlineTugas).toISOString(),
+      keterangan_tugas: inputKeteranganTugas.trim() || '-'
+    }]);
+
+    if (!error) {
+      setInputNamaTugas("");
+      setInputDeadlineTugas("");
+      setInputKeteranganTugas("");
+      await ambilData();
+      alert("Success: Penugasan baru telah diterbitkan!");
+    } else {
+      alert(`Gagal Menambahkan Tugas: ${error.message}`);
+    }
+    setMemuat(false);
+  };
+
+  const hapusTugasDB = async (id: string) => {
+    const konfirmasi = window.confirm("Hapus tugas ini secara permanen? Semua berkas peserta akan hilang dari dashboard.");
+    if (!konfirmasi) return;
+    setMemuat(true);
+    const { error } = await supabase.from('master_tugas').delete().eq('id', id);
+    if (!error) {
+      if (tugasTerpilih === id) setTugasTerpilih(null);
+      await ambilData();
+    } else {
+      alert(`Gagal Menghapus Tugas: ${error.message}`);
+    }
+    setMemuat(false);
+  };
+
+  const deleteSubmissionLog = async (id: string) => {
+    if(!window.confirm("Hapus rekam pengumpulan ini?")) return;
+    setMemuat(true);
+    await supabase.from('pengumpulan_tugas').delete().eq('id', id);
+    await ambilData();
+  };
+
+  const kalkulasiSisaWaktuTugas = (deadlineISO: string) => {
+    const sekarang = new Date();
+    const targetDl = new Date(deadlineISO);
+    const selisihMs = targetDl.getTime() - sekarang.getTime();
+
+    if (selisihMs < 0) {
+      const sisaAbsolut = Math.abs(selisihMs);
+      const hari = Math.floor(sisaAbsolut / (1000 * 60 * 60 * 24));
+      const jam = Math.floor((sisaAbsolut % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      return { teks: `Lewat ${hari}h ${jam}j`, kelasCss: 'text-rose-600 bg-rose-50' };
+    } else {
+      const hari = Math.floor(selisihMs / (1000 * 60 * 60 * 24));
+      const jam = Math.floor((selisihMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const menit = Math.floor((selisihMs % (1000 * 60 * 60)) / (1000 * 60));
+      return { teks: hari > 0 ? `${hari} Hari ${jam} Jam Lagi` : `${jam} Jam ${menit} Mnt Lagi`, kelasCss: 'text-purple-600 bg-purple-50' };
+    }
+  };
+  /* ================================================== */
 
   const tambahPersonelDB = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -224,6 +324,16 @@ export default function RekapitulasiAdmin() {
     if (!error) { setIsEditing(false); await ambilData(); } 
     else { alert(`Database Error: ${error.message}`); }
     setMemuat(false);
+  };
+
+  const bukaModalEdit = (row: Absensi) => {
+    const waktu = new Date(row.waktu_absen);
+    const jamStr = String(waktu.getHours()).padStart(2, '0');
+    const menitStr = String(waktu.getMinutes()).padStart(2, '0');
+    setEditId(row.id); setEditNama(row.nama_peserta); setEditJenis(row.jenis_absen);
+    setEditTime(`${jamStr}:${menitStr}`); setEditWaktuAsli(row.waktu_absen);
+    setEditStatus(kalkulasiStatusWaktu(row.waktu_absen, row.jenis_absen));
+    setIsEditing(true);
   };
 
   const eksporKeExcel = () => {
@@ -397,7 +507,7 @@ export default function RekapitulasiAdmin() {
   const absenHariIni = dataAbsensi.filter(d => isToday(d.waktu_absen));
   const personelSesuaiTab = masterPersonel.filter(p => p.peran === tabAktif);
 
-  // PEMBARUAN: Mengumpulkan seluruh log per personel agar bisa dicek Pagi/Siang
+  // Mengumpulkan seluruh log per personel agar bisa dicek Pagi/Siang
   const mapAbsenHariIni = absenHariIni.reduce((acc, curr) => {
     if (!acc[curr.nama_peserta]) acc[curr.nama_peserta] = [];
     acc[curr.nama_peserta].push(curr);
@@ -439,9 +549,10 @@ export default function RekapitulasiAdmin() {
       <main className="max-w-7xl mx-auto px-6 mt-10">
         
         <div className="flex flex-wrap gap-2 bg-slate-100/70 p-2 rounded-[1.25rem] mb-8 w-fit border border-slate-200/50">
-          <button onClick={() => {setMenuUtama('INDIVIDU'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'INDIVIDU' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Individual Report</button>
-          <button onClick={() => {setMenuUtama('HARIAN'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'HARIAN' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>Daily Report</button>
-          <button onClick={() => {setMenuUtama('PERSONEL'); setNamaTerpilih(null); setTanggalTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'PERSONEL' ? 'bg-slate-900 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}>Personal Management</button>
+          <button onClick={() => {setMenuUtama('INDIVIDU'); setNamaTerpilih(null); setTanggalTerpilih(null); setTugasTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'INDIVIDU' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Individual Report</button>
+          <button onClick={() => {setMenuUtama('HARIAN'); setNamaTerpilih(null); setTanggalTerpilih(null); setTugasTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'HARIAN' ? 'bg-white shadow-sm text-emerald-600' : 'text-slate-500 hover:text-slate-700'}`}>Daily Report</button>
+          <button onClick={() => {setMenuUtama('TUGAS'); setNamaTerpilih(null); setTanggalTerpilih(null); setTugasTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'TUGAS' ? 'bg-white shadow-sm text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}>Task Management</button>
+          <button onClick={() => {setMenuUtama('PERSONEL'); setNamaTerpilih(null); setTanggalTerpilih(null); setTugasTerpilih(null);}} className={`px-6 py-3 rounded-xl font-bold text-sm transition-all duration-300 ${menuUtama === 'PERSONEL' ? 'bg-slate-900 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}>Personal Management</button>
         </div>
 
         {memuat ? (
@@ -458,7 +569,6 @@ export default function RekapitulasiAdmin() {
                       <button onClick={() => setTabAktif('ASISTEN')} className={`px-5 py-2 rounded-full font-bold text-xs uppercase tracking-wider transition-all ${tabAktif === 'ASISTEN' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>Asisten PLTS</button>
                     </div>
 
-                    {/* PEMBARUAN UTAMA: LIVE TRACKER STATUS MONITOR DENGAN LOGIKA WARNA */}
                     <div className="mb-10 bg-[#fafafa]/40 backdrop-blur-sm rounded-[2rem] border border-slate-200/60 p-6 sm:p-8">
                       <div className="flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center mb-6">
                         <div>
@@ -477,13 +587,11 @@ export default function RekapitulasiAdmin() {
                         <div className="bg-emerald-500 h-1 rounded-full transition-all duration-1000 ease-out" style={{ width: `${persentaseHadir}%` }}></div>
                       </div>
 
-                      {/* Grid Modern & Logika Warna */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                         {personelSesuaiTab.map(p => {
                           const logs = mapAbsenHariIni[p.nama] || [];
                           const sudahHadir = logs.length > 0;
                           
-                          // Penentuan Hierarki Log
                           const logSiang = logs.find(l => l.jenis_absen === 'SIANG');
                           const logPagi = logs.find(l => l.jenis_absen === 'MASUK');
                           const logLainnya = logs.find(l => ['IZIN', 'SAKIT', 'ALPHA'].includes(l.jenis_absen));
@@ -732,7 +840,128 @@ export default function RekapitulasiAdmin() {
               </div>
             )}
 
-            {/* ========================================= MENU 3: MANAJEMEN PERSONEL ========================================= */}
+            {/* ========================================= MENU 3: TUGAS & PENGUMPULAN ========================================= */}
+            {menuUtama === 'TUGAS' && (
+              <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* FORM PEMBUATAN TUGAS */}
+                <div className="lg:col-span-1">
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 sticky top-28">
+                    <h2 className="text-lg font-extrabold text-slate-900 mb-1">Terbitkan Tugas</h2>
+                    <p className="text-xs text-slate-500 mb-6">Countdown waktu sisa akan tampil otomatis di portal peserta.</p>
+                    
+                    <form onSubmit={tambahTugasDB} className="flex flex-col gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nama Tugas / Proyek</label>
+                        <input type="text" value={inputNamaTugas} onChange={(e) => setInputNamaTugas(e.target.value)} required placeholder="Contoh: Laporan Mingguan..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Batas Waktu (Deadline)</label>
+                        <input type="datetime-local" value={inputDeadlineTugas} onChange={(e) => setInputDeadlineTugas(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Deskripsi Tugas</label>
+                        <textarea value={inputKeteranganTugas} onChange={(e) => setInputKeteranganTugas(e.target.value)} rows={3} placeholder="Instruksi format file..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900 resize-none" />
+                      </div>
+                      <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-sm transition-all shadow-md mt-2">Daftarkan Tugas Baru</button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* DAFTAR TUGAS & PENGUMPULAN */}
+                <div className="lg:col-span-2 space-y-6">
+                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
+                      <h2 className="text-base font-extrabold text-slate-900">Daftar Penugasan Aktif</h2>
+                      <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full">{dataTugas.length} Tugas</span>
+                    </div>
+
+                    {dataTugas.length === 0 ? (
+                      <div className="p-10 text-center text-slate-400 italic">Belum ada tugas yang ditambahkan admin.</div>
+                    ) : (
+                      <div className="divide-y divide-slate-50">
+                        {dataTugas.map((t) => {
+                          const cdown = kalkulasiSisaWaktuTugas(t.deadline);
+                          const isSelected = tugasTerpilih === t.id;
+                          const kumpulFilter = dataPengumpulan.filter(p => p.tugas_id === t.id);
+
+                          return (
+                            <div key={t.id} className={`p-6 transition-all ${isSelected ? 'bg-purple-50/20' : 'hover:bg-slate-50/40'}`}>
+                              <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-3">
+                                <div>
+                                  <h3 className="font-bold text-slate-900 text-base">{t.nama_tugas}</h3>
+                                  <p className="text-xs text-slate-400 mt-1">Deadline: {new Date(t.deadline).toLocaleString('id-ID')} WIB</p>
+                                </div>
+                                <div className="flex gap-2 shrink-0">
+                                  <button onClick={() => setTugasTerpilih(isSelected ? null : t.id)} className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${isSelected ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:bg-purple-50'}`}>
+                                    {isSelected ? 'Tutup Pantauan' : 'Lihat Pengumpulan'}
+                                  </button>
+                                  <button onClick={() => hapusTugasDB(t.id)} className="text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 p-1.5 rounded-lg transition-all" title="Hapus Tugas">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 mt-4">
+                                <span className={`px-3 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase ${cdown.kelasCss}`}>
+                                  {cdown.teks}
+                                </span>
+                                <span className="text-xs text-slate-400 font-medium">Ket: {t.keterangan_tugas}</span>
+                              </div>
+
+                              {isSelected && (
+                                <div className="mt-6 pt-6 border-t border-purple-100 animate-fade-in">
+                                  <div className="flex justify-between items-center mb-4">
+                                    <h4 className="text-xs font-extrabold text-purple-900 uppercase tracking-widest">Kolom Pengumpulan Peserta ({kumpulFilter.length})</h4>
+                                  </div>
+
+                                  {kumpulFilter.length === 0 ? (
+                                    <div className="p-6 text-center text-xs font-medium text-slate-400 border border-dashed border-slate-200 rounded-xl bg-white">Belum ada peserta yang mengumpulkan tugas ini.</div>
+                                  ) : (
+                                    <div className="border border-purple-100 rounded-xl overflow-hidden bg-white shadow-sm">
+                                      <table className="w-full text-xs text-left">
+                                        <thead className="bg-purple-50/40 text-[10px] font-bold uppercase tracking-wider text-purple-700 border-b border-purple-100">
+                                          <tr>
+                                            <th className="px-4 py-3">Nama Lengkap / Kelompok</th>
+                                            <th className="px-4 py-3 text-center">Waktu Kirim</th>
+                                            <th className="px-4 py-3 text-center">Status</th>
+                                            <th className="px-4 py-3 text-right">Tautan Tugas</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-purple-50">
+                                          {kumpulFilter.map((sub) => (
+                                            <tr key={sub.id} className="hover:bg-purple-50/10 transition-colors">
+                                              <td className="px-4 py-3.5 font-bold text-slate-800">{sub.nama_peserta}</td>
+                                              <td className="px-4 py-3 text-center text-slate-500 font-semibold">{new Date(sub.waktu_pengumpulan).toLocaleString('id-ID')} WIB</td>
+                                              <td className="px-4 py-3 text-center">
+                                                <span className={`px-2 py-0.5 rounded font-extrabold uppercase text-[9px] ${sub.status_waktu === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                  {sub.status_waktu}
+                                                </span>
+                                              </td>
+                                              <td className="px-4 py-3 text-right">
+                                                <div className="flex items-center justify-end gap-2">
+                                                  <a href={sub.link_tautan} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-800 font-bold bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded">Buka Dokumen</a>
+                                                  <button onClick={() => deleteSubmissionLog(sub.id)} className="text-rose-400 hover:text-rose-600 p-1 font-bold">✕</button>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ========================================= MENU 4: MANAJEMEN PERSONEL ========================================= */}
             {menuUtama === 'PERSONEL' && (
               <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-1">
