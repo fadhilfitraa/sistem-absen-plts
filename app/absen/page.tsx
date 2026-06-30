@@ -18,11 +18,6 @@ interface NotaAbsen {
   statusKehadiran: string;
 }
 
-interface Personel {
-  nama: string;
-  peran: string;
-}
-
 export default function Absensi() {
   const [isMounted, setIsMounted] = useState(false);
 
@@ -30,11 +25,11 @@ export default function Absensi() {
   const [nama, setNama] = useState<string>("");
   const [langkah, setLangkah] = useState<number>(1);
   const [lokasi, setLokasi] = useState<{ lat: number; lng: number } | null>(null);
-  const [status, setStatus] = useState<string>("");
+  const [status, setStatus] = useState<string>( "");
   const [nota, setNota] = useState<NotaAbsen | null>(null);
   const webcamRef = useRef<any>(null);
 
-  // State untuk menampung master nama dari database Supabase
+  // State menampung master nama dari database Supabase
   const [daftarNamaAktif, setDaftarNamaAktif] = useState<string[]>([]);
   const [rekomendasi, setRekomendasi] = useState<string[]>([]);
   const [tampilkanSaran, setTampilkanSaran] = useState<boolean>(false);
@@ -43,7 +38,6 @@ export default function Absensi() {
   const [isMirrored, setIsMirrored] = useState<boolean>(false);
   const [waktuLive, setWaktuLive] = useState<Date | null>(null);
 
-  // Ambil data nama dari DB begitu komponen dimuat
   useEffect(() => {
     setIsMounted(true);
     
@@ -67,7 +61,6 @@ export default function Absensi() {
     muatNamaDariDB();
   }, []);
 
-  // Memutar jam live di langkah 2
   useEffect(() => {
     if (langkah === 2) {
       setWaktuLive(new Date());
@@ -77,7 +70,7 @@ export default function Absensi() {
   }, [langkah]);
 
   const handleKetikNama = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const nilaiInput = e.target.value;
+    const nilaiInput = e.target.value || "";
     setNama(nilaiInput);
 
     if (nilaiInput.trim() !== "") {
@@ -111,7 +104,7 @@ export default function Absensi() {
 
   const lanjutKeKamera = () => {
     if (!nama) return setStatus("Mohon isi nama terlebih dahulu.");
-    if (!daftarNamaAktif.includes(nama)) return setStatus(`Nama tidak terdaftar di sistem ${jalur === 'asisten' ? 'Asisten' : 'KP'}.`);
+    if (!daftarNamaAktif.includes(nama)) return setStatus(`Nama tidak terdaftar di draf data personel ${jalur === 'asisten' ? 'Asisten' : 'KP'}.`);
 
     setStatus("Verifying location compliance...");
     
@@ -121,7 +114,8 @@ export default function Absensi() {
         const userLng = pos.coords.longitude;
         const jarakKeItera = hitungJarakMeter(userLat, userLng, ITERA_COORDS.lat, ITERA_COORDS.lng);
 
-        if (jarakKeItera > RADIUS_MAKSIMAL) {
+        // FITUR BARU: Jika merupakan asisten, bypass pembatasan wilayah perimeter radius
+        if (jalur !== 'asisten' && jarakKeItera > RADIUS_MAKSIMAL) {
           setStatus(`Access Denied: Anda berada di luar area izin (${Math.round(jarakKeItera)} meter). Batas perimeter maksimal adalah ${RADIUS_MAKSIMAL}m.`);
           return;
         }
@@ -130,13 +124,22 @@ export default function Absensi() {
         setLangkah(2);
         setStatus("");
       },
-      (err) => setStatus(`GPS Failed: ${err.message}`),
+      (err) => {
+        // Jika asisten mengalami kegagalan modul GPS/izin lokasi, tetap loloskan karena jaraknya bebas
+        if (jalur === 'asisten') {
+          setLokasi({ lat: 0, lng: 0 });
+          setLangkah(2);
+          setStatus("");
+        } else {
+          setStatus(`GPS Failed: ${err.message}. Harap aktifkan lokasi perangkat Anda.`);
+        }
+      },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
   const kirimData = useCallback(async (jenis: string) => {
-    setStatus("saving data...");
+    setStatus("Securing transaction data...");
 
     try {
       const imageSrc = webcamRef.current?.getScreenshot();
@@ -172,8 +175,8 @@ export default function Absensi() {
         nama_peserta: nama,
         jenis_absen: jenis,
         peran: jalur.toUpperCase(),
-        latitude: lokasi?.lat,
-        longitude: lokasi?.lng,
+        latitude: lokasi?.lat || 0,
+        longitude: lokasi?.lng || 0,
         foto_url: finalFotoUrl
       }]);
 
@@ -204,7 +207,7 @@ export default function Absensi() {
   if (!isMounted) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="animate-pulse w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="animate-spin w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full"></div>
       </div>
     );
   }
@@ -216,33 +219,40 @@ export default function Absensi() {
       <div className="absolute inset-0 bg-[url('/bg-plts.jpg')] bg-cover bg-center bg-no-repeat bg-fixed z-0"></div>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
 
-      <div className={`relative z-10 bg-white p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-gray-100 border-t-[6px] transition-all duration-500 ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
+      <div className={`relative z-10 bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-white/20 border-t-[6px] transition-all duration-500 ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
         {langkah !== 3 && (
           <>
             <div className="flex flex-col items-center mb-6 sm:mb-8 mt-1">
-              <img src="/logo-plts.png" alt="Logo PLTS" className="h-10 sm:h-14 object-contain mb-3 sm:mb-4" />
-              <h1 className="text-lg sm:text-xl font-bold text-gray-900 tracking-tight text-center">Presensi {jalur === 'asisten' ? 'Asisten' : 'Peserta KP'}</h1>
+              <img src="/logo-plts.png" alt="Logo PLTS" className="h-12 sm:h-14 object-contain mb-3 drop-shadow-sm animate-fade-in" />
+              <h1 className="text-xl font-black text-slate-900 tracking-tight text-center">
+                Presensi {jalur === 'asisten' ? 'Asisten' : 'Peserta KP'}
+              </h1>
+              {jalur === 'asisten' && (
+                <span className="mt-1 px-3 py-0.5 rounded-full text-[9px] font-extrabold bg-amber-50 text-amber-700 tracking-wider uppercase border border-amber-200">
+                  Location Protection Bypassed
+                </span>
+              )}
             </div>
 
             {langkah === 1 && (
-              <div className="flex flex-col gap-4 sm:gap-5">
+              <div className="flex flex-col gap-4 sm:gap-5 animate-fade-in">
                 <div className="relative">
-                  <label className="block text-[10px] sm:text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Nama Lengkap</label>
+                  <label className="block text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nama Lengkap</label>
                   <input 
                     type="text" 
-                    placeholder="Ketik Nama Anda..." 
-                    value={nama}
+                    placeholder="Ketik nama Anda..." 
+                    value={nama || ""}
                     onChange={handleKetikNama}
-                    onFocus={() => nama && setTampilkanSaran(true)}
-                    className="w-full bg-gray-50 border border-gray-200 p-3 sm:p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-black text-base placeholder-gray-400 transition-all"
+                    onFocus={() => { if (nama) setTampilkanSaran(true); }}
+                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-800 text-slate-900 font-semibold text-base placeholder-slate-300 transition-all shadow-sm"
                   />
                   {tampilkanSaran && rekomendasi.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full bg-white border border-gray-100 rounded-xl shadow-xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
+                    <div className="absolute left-0 right-0 top-full bg-white border border-slate-100 rounded-xl shadow-2xl mt-2 z-50 max-h-44 overflow-y-auto overflow-hidden divide-y divide-slate-50 border-t-[3px] border-t-slate-800">
                       {rekomendasi.map((namaSaran) => (
                         <div
                           key={namaSaran}
                           onClick={() => pilihNamaRekomendasi(namaSaran)}
-                          className="p-3 sm:p-3.5 hover:bg-gray-50 text-gray-800 text-sm cursor-pointer border-b border-gray-50 last:border-none transition-colors"
+                          className="p-3.5 hover:bg-slate-50 text-slate-800 font-semibold text-sm cursor-pointer transition-colors"
                         >
                           {namaSaran}
                         </div>
@@ -253,19 +263,19 @@ export default function Absensi() {
                 
                 <button 
                   onClick={lanjutKeKamera} 
-                  className={`w-full py-3.5 sm:py-4 rounded-xl font-semibold text-white text-sm sm:text-base shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  className={`w-full py-4 rounded-xl font-bold text-white text-sm sm:text-base shadow-lg transition-all hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'}`}
                 >
-                  Continue
+                  NEXT
                 </button>
-                <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors text-center w-full">
-                  Back to Home
+                <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-bold text-slate-400 hover:text-slate-600 mt-1 transition-colors text-center w-full uppercase tracking-wider">
+                  Kembali ke Halaman Utama
                 </button>
               </div>
             )}
 
             {langkah === 2 && (
               <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
-                <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] sm:aspect-auto flex items-center justify-center bg-black relative group">
+                <div className="w-full rounded-2xl overflow-hidden shadow-md border border-slate-100 bg-black aspect-[3/4] flex items-center justify-center relative group">
                   <Webcam 
                     ref={webcamRef} 
                     screenshotFormat="image/jpeg" 
@@ -274,15 +284,15 @@ export default function Absensi() {
                     className="w-full h-full object-cover" 
                   />
                   
-                  <div className="absolute top-3 right-3 flex flex-col gap-2">
-                    <button onClick={() => setKameraDepan(!kameraDepan)} className="bg-black/40 hover:bg-black/70 text-white p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
-                    <button onClick={() => setIsMirrored(!isMirrored)} className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/20 ${isMirrored ? 'bg-blue-600/90 text-white' : 'bg-black/40 hover:bg-black/70 text-white'}`}><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>
+                  <div className="absolute bottom-3 right-3 flex gap-2">
+                    <button onClick={() => setKameraDepan(!kameraDepan)} className="bg-black/60 hover:bg-black/80 text-white p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/10" title="Flip Camera"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg></button>
+                    <button onClick={() => setIsMirrored(!isMirrored)} className={`p-2.5 rounded-full backdrop-blur-md transition-all shadow-lg border border-white/10 ${isMirrored ? 'bg-purple-600 text-white' : 'bg-black/60 text-white'}`} title="Mirror Mode"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg></button>
                   </div>
                 </div>
 
-                <div className="w-full flex items-center justify-between bg-slate-50 border border-slate-100 px-3 py-1.5 rounded-lg">
+                <div className="w-full flex items-center justify-between bg-slate-50 border border-slate-200/60 px-4 py-2 rounded-xl shadow-inner">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Live Time</span>
-                  <span className="text-xs font-bold text-slate-700 font-mono">
+                  <span className="text-sm font-black text-slate-800 font-mono tracking-wide">
                     {waktuLive ? waktuLive.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "--:--:--"} WIB
                   </span>
                 </div>
@@ -290,65 +300,66 @@ export default function Absensi() {
                 {waktuLive && (
                   <div className="w-full space-y-2">
                     {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
-                      <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
-                        <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-medium text-rose-700 leading-snug">Anda telah melewati batas Absen Pagi. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.</p>
+                      <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 p-3.5 rounded-xl animate-fade-in shadow-sm">
+                        <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p className="text-[11px] font-bold text-rose-700 leading-normal">Masa kehadiran Pagi berakhir. Riwayat log Anda akan disimpan dengan flag <span className="underline decoration-wavy">LATE / TERLAMBAT</span>.</p>
                       </div>
                     )}
                     
                     {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
-                      <div className="flex items-start gap-2 bg-rose-50 border border-rose-200 p-3 rounded-xl animate-fade-in shadow-sm">
-                        <svg className="w-5 h-5 text-rose-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-medium text-rose-700 leading-snug">Anda telah melewati batas Absen Siang. Log Anda akan tercatat sebagai <span className="font-extrabold">Terlambat</span>.</p>
+                      <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 p-3.5 rounded-xl animate-fade-in shadow-sm">
+                        <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p className="text-[11px] font-bold text-rose-700 leading-normal">Masa kehadiran Siang berakhir. Riwayat log Anda akan disimpan dengan flag <span className="underline decoration-wavy">LATE / TERLAMBAT</span>.</p>
                       </div>
                     )}
                   </div>
                 )}
                 
-                <div className="flex flex-col w-full mt-1 sm:mt-2">
+                <div className="flex flex-col w-full mt-1">
                   {jamSekarang < 12 ? (
-                    <button onClick={() => kirimData('MASUK')} className="w-full bg-gray-900 hover:bg-black transition-all text-white py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm hover:shadow-md">Ambil Foto & Absen Pagi</button>
+                    <button onClick={() => kirimData('MASUK')} className="w-full bg-slate-900 hover:bg-black transition-all text-white py-4 rounded-xl font-extrabold text-sm sm:text-base shadow-md">Ambil Foto & Absen Pagi</button>
                   ) : (
-                    <button onClick={() => kirimData('SIANG')} className="w-full bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all text-gray-900 py-3.5 sm:py-4 rounded-xl font-semibold text-sm sm:text-base shadow-sm">Ambil Foto & Absen Siang</button>
+                    <button onClick={() => kirimData('SIANG')} className="w-full bg-white border-2 border-slate-200 hover:border-slate-900 hover:bg-slate-50 transition-all text-slate-900 py-4 rounded-xl font-extrabold text-sm sm:text-base shadow-sm">Ambil Foto & Absen Siang</button>
                   )}
                 </div>
 
-                <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors">Cancel</button>
+                <button onClick={() => { setLokasi(null); setLangkah(1); }} className="text-xs sm:text-sm font-bold text-slate-400 hover:text-slate-600 transition-colors uppercase tracking-wider">Kembali</button>
               </div>
             )}
 
             {status && (
-              <div className="mt-5 sm:mt-6 p-3 sm:p-4 bg-gray-50 rounded-xl border border-gray-100 text-xs sm:text-sm text-gray-700 font-medium text-center animate-pulse">{status}</div>
+              <div className="mt-5 p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 font-bold text-center animate-pulse tracking-wide uppercase">{status}</div>
             )}
           </>
         )}
 
         {langkah === 3 && nota && (
           <div className="flex flex-col items-center text-center py-2 animate-fade-in">
-            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-sm border border-emerald-100"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
-            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-1">Presensi Sukses!</h1>
-            <p className="text-xs text-gray-400 font-medium uppercase tracking-widest mb-8">Digital Log Saved</p>
-            <div className="w-full bg-gray-50/50 border border-gray-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8">
+            <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-inner border border-emerald-200"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1">Presensi Sukses!</h1>
+            <p className="text-xs text-slate-400 font-extrabold uppercase tracking-widest mb-8">Digital Receipt Ledger Locked</p>
+            
+            <div className="w-full bg-slate-50/50 border border-slate-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8 shadow-sm">
               <div>
-                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Nama Personel</span>
-                <span className="text-base font-bold text-gray-900 leading-tight block">{nota.nama}</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Nama Personel</span>
+                <span className="text-base font-bold text-slate-800 leading-tight block">{nota.nama}</span>
               </div>
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100/70">
+              <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100">
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Tipe Log</span>
-                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold ${nota.jenis === 'Absen Pagi' ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>{nota.jenis}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Tipe Log</span>
+                  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-extrabold border ${nota.jenis === 'Absen Pagi' ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-amber-50 text-amber-700 border-amber-100'}`}>{nota.jenis}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Waktu Sistem</span>
-                  <span className="text-sm font-semibold text-gray-800">{nota.waktu}</span>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Waktu Sistem</span>
+                  <span className="text-sm font-black text-slate-700 font-mono">{nota.waktu}</span>
                 </div>
               </div>
-              <div className="pt-3 border-t border-gray-100/70 flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider">Status Waktu</span>
-                <span className={`px-3 py-1 rounded-full text-[11px] font-extrabold tracking-wide uppercase ${nota.statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>{nota.statusKehadiran}</span>
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status Compliance</span>
+                <span className={`px-3 py-1 rounded-full text-[10px] font-black tracking-wide uppercase ${nota.statusKehadiran === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>{nota.statusKehadiran}</span>
               </div>
             </div>
-            <p className="text-xs text-gray-400 font-medium animate-pulse">Redirecting to home screen...</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider animate-pulse">Redirecting to primary monitor...</p>
           </div>
         )}
       </div>

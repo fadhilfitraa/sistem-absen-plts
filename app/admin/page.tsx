@@ -22,7 +22,6 @@ interface Personel {
   peran: string;
 }
 
-// Tambahan Interface untuk Fitur Tugas
 interface Tugas {
   id: string;
   nama_tugas: string;
@@ -44,7 +43,6 @@ export default function RekapitulasiAdmin() {
   const [isAksesDiberikan, setIsAksesDiberikan] = useState<boolean>(false);
   const [kataSandi, setKataSandi] = useState<string>("");
 
-  // Tambahan menu TUGAS pada navigasi
   const [menuUtama, setMenuUtama] = useState<'INDIVIDU' | 'HARIAN' | 'PERSONEL' | 'TUGAS'>('INDIVIDU');
 
   const [dataAbsensi, setDataAbsensi] = useState<Absensi[]>([]);
@@ -55,6 +53,13 @@ export default function RekapitulasiAdmin() {
   const [dataPengumpulan, setDataPengumpulan] = useState<Pengumpulan[]>([]);
   const [tugasTerpilih, setTugasTerpilih] = useState<string | null>(null);
   
+  // State Edit Tugas (Baru)
+  const [isEditingTugas, setIsEditingTugas] = useState<boolean>(false);
+  const [editTugasId, setEditTugasId] = useState<string>("");
+  const [editNamaTugas, setEditNamaTugas] = useState<string>("");
+  const [editDeadlineTugas, setEditDeadlineTugas] = useState<string>("");
+  const [editKeteranganTugas, setEditKeteranganTugas] = useState<string>("");
+
   const [memuat, setMemuat] = useState<boolean>(true);
   
   const [tabAktif, setTabAktif] = useState<'PESERTA' | 'ASISTEN'>('PESERTA');
@@ -89,9 +94,20 @@ export default function RekapitulasiAdmin() {
   const [inputDeadlineTugas, setInputDeadlineTugas] = useState("");
   const [inputKeteranganTugas, setInputKeteranganTugas] = useState("");
 
+  // Waktu Berjalan untuk Live Countdown Tugas Presisi Tinggi
+  const [currentTimeTick, setCurrentTimeTick] = useState<Date>(new Date());
+
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (isAksesDiberikan && menuUtama === 'TUGAS') {
+      timer = setInterval(() => setCurrentTimeTick(new Date()), 1000);
+    }
+    return () => clearInterval(timer);
+  }, [isAksesDiberikan, menuUtama]);
 
   useEffect(() => {
     if (isAksesDiberikan) ambilData();
@@ -146,6 +162,41 @@ export default function RekapitulasiAdmin() {
     setMemuat(false);
   };
 
+  // Membuka Modal Edit Tugas
+  const bukaModalEditTugas = (t: Tugas) => {
+    const localDate = new Date(t.deadline);
+    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+    const formattedDeadline = localDate.toISOString().slice(0, 19);
+
+    setEditTugasId(t.id);
+    setEditNamaTugas(t.nama_tugas);
+    setEditDeadlineTugas(formattedDeadline);
+    setEditKeteranganTugas(t.keterangan_tugas);
+    setIsEditingTugas(true);
+  };
+
+  // Menyimpan Perubahan Update Data Tugas
+  const simpanPerubahanEditTugas = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editNamaTugas.trim() || !editDeadlineTugas) return alert("Task name and deadline cannot be empty!");
+    setMemuat(true);
+
+    const { error } = await supabase.from('master_tugas').update({
+      nama_tugas: editNamaTugas,
+      deadline: new Date(editDeadlineTugas).toISOString(),
+      keterangan_tugas: editKeteranganTugas.trim() || '-'
+    }).eq('id', editTugasId);
+
+    if (!error) {
+      setIsEditingTugas(false);
+      await ambilData();
+      alert("Success: Penugasan berhasil diperbarui!");
+    } else {
+      alert(`Database Error: ${error.message}`);
+    }
+    setMemuat(false);
+  };
+
   const hapusTugasDB = async (id: string) => {
     const konfirmasi = window.confirm("Hapus tugas ini secara permanen? Semua berkas peserta akan hilang dari dashboard.");
     if (!konfirmasi) return;
@@ -168,20 +219,32 @@ export default function RekapitulasiAdmin() {
   };
 
   const kalkulasiSisaWaktuTugas = (deadlineISO: string) => {
-    const sekarang = new Date();
     const targetDl = new Date(deadlineISO);
-    const selisihMs = targetDl.getTime() - sekarang.getTime();
+    const selisihMs = targetDl.getTime() - currentTimeTick.getTime();
 
     if (selisihMs < 0) {
       const sisaAbsolut = Math.abs(selisihMs);
       const hari = Math.floor(sisaAbsolut / (1000 * 60 * 60 * 24));
       const jam = Math.floor((sisaAbsolut % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      return { teks: `Lewat ${hari}h ${jam}j`, kelasCss: 'text-rose-600 bg-rose-50' };
+      const menit = Math.floor((sisaAbsolut % (1000 * 60 * 60)) / (1000 * 60));
+      const detik = Math.floor((sisaAbsolut % (1000 * 60)) / 1000);
+      return { 
+        teks: `Closed (Ended ${hari}d ${String(jam).padStart(2, '0')}:${String(menit).padStart(2, '0')}:${String(detik).padStart(2, '0')} ago)`, 
+        status: 'LEWAT', 
+        kelasCss: 'text-rose-600 bg-rose-50 border-rose-200' 
+      };
     } else {
       const hari = Math.floor(selisihMs / (1000 * 60 * 60 * 24));
       const jam = Math.floor((selisihMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const menit = Math.floor((selisihMs % (1000 * 60 * 60)) / (1000 * 60));
-      return { teks: hari > 0 ? `${hari} Hari ${jam} Jam Lagi` : `${jam} Jam ${menit} Mnt Lagi`, kelasCss: 'text-purple-600 bg-purple-50' };
+      const detik = Math.floor((selisihMs % (1000 * 60)) / 1000);
+      return { 
+        teks: hari > 0 
+          ? `Active (${hari}d ${String(jam).padStart(2, '0')}:${String(menit).padStart(2, '0')}:${String(detik).padStart(2, '0')} left)` 
+          : `Active (${String(jam).padStart(2, '0')}:${String(menit).padStart(2, '0')}:${String(detik).padStart(2, '0')} left)`, 
+        status: 'AKTIF', 
+        kelasCss: 'text-purple-600 bg-purple-50 border-purple-200' 
+      };
     }
   };
   /* ================================================== */
@@ -375,7 +438,7 @@ export default function RekapitulasiAdmin() {
             }
           </td>
         </tr>
-      `
+      `;
     }).join("");
 
     const excelTemplate = `
@@ -507,14 +570,12 @@ export default function RekapitulasiAdmin() {
   const absenHariIni = dataAbsensi.filter(d => isToday(d.waktu_absen));
   const personelSesuaiTab = masterPersonel.filter(p => p.peran === tabAktif);
 
-  // Mengumpulkan seluruh log per personel agar bisa dicek Pagi/Siang
   const mapAbsenHariIni = absenHariIni.reduce((acc, curr) => {
     if (!acc[curr.nama_peserta]) acc[curr.nama_peserta] = [];
     acc[curr.nama_peserta].push(curr);
     return acc;
   }, {} as Record<string, Absensi[]>);
 
-  // Hitung jumlah yang sudah hadir (minimal ada 1 log)
   const jumlahHadir = personelSesuaiTab.filter(p => mapAbsenHariIni[p.nama]?.length > 0).length;
   const persentaseHadir = personelSesuaiTab.length > 0 ? Math.round((jumlahHadir / personelSesuaiTab.length) * 100) : 0;
 
@@ -845,106 +906,126 @@ export default function RekapitulasiAdmin() {
               <div className="animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* FORM PEMBUATAN TUGAS */}
                 <div className="lg:col-span-1">
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 sticky top-28">
-                    <h2 className="text-lg font-extrabold text-slate-900 mb-1">Terbitkan Tugas</h2>
-                    <p className="text-xs text-slate-500 mb-6">Countdown waktu sisa akan tampil otomatis di portal peserta.</p>
+                  <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 sticky top-28">
+                    <h2 className="text-lg font-extrabold text-slate-900 mb-1">Publish Task</h2>
+                    <p className="text-xs text-slate-400 font-medium mb-6">Create project or report assignments for interns.</p>
                     
                     <form onSubmit={tambahTugasDB} className="flex flex-col gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Nama Tugas / Proyek</label>
-                        <input type="text" value={inputNamaTugas} onChange={(e) => setInputNamaTugas(e.target.value)} required placeholder="Contoh: Laporan Mingguan..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900" />
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Task Title</label>
+                        <input type="text" value={inputNamaTugas} onChange={(e) => setInputNamaTugas(e.target.value)} required placeholder="e.g., Weekly Project Report..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Batas Waktu (Deadline)</label>
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Target Deadline</label>
                         <input type="datetime-local" value={inputDeadlineTugas} onChange={(e) => setInputDeadlineTugas(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900" />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Deskripsi Tugas</label>
-                        <textarea value={inputKeteranganTugas} onChange={(e) => setInputKeteranganTugas(e.target.value)} rows={3} placeholder="Instruksi format file..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900 resize-none" />
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Instructions / Notes</label>
+                        <textarea value={inputKeteranganTugas} onChange={(e) => setInputKeteranganTugas(e.target.value)} rows={3} placeholder="File format guidelines..." className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500/20 text-slate-900 resize-none" />
                       </div>
-                      <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-sm transition-all shadow-md mt-2">Daftarkan Tugas Baru</button>
+                      <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 rounded-xl text-sm transition-all shadow-md mt-2">Publish Task</button>
                     </form>
                   </div>
                 </div>
 
-                {/* DAFTAR TUGAS & PENGUMPULAN */}
+                {/* MONITOR PANEL SUBMISSION & PEMBARUAN EDIT */}
                 <div className="lg:col-span-2 space-y-6">
-                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                    <div className="p-6 border-b border-slate-50 bg-slate-50/50 flex justify-between items-center">
-                      <h2 className="text-base font-extrabold text-slate-900">Daftar Penugasan Aktif</h2>
-                      <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full">{dataTugas.length} Tugas</span>
+                  <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                      <h2 className="text-base font-extrabold text-slate-900">Active Task Board</h2>
+                      <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full">{dataTugas.length} Tasks</span>
                     </div>
 
                     {dataTugas.length === 0 ? (
-                      <div className="p-10 text-center text-slate-400 italic">Belum ada tugas yang ditambahkan admin.</div>
+                      <div className="p-10 text-center text-slate-400 italic">No tasks have been published yet.</div>
                     ) : (
-                      <div className="divide-y divide-slate-50">
+                      <div className="divide-y divide-slate-100">
                         {dataTugas.map((t) => {
                           const cdown = kalkulasiSisaWaktuTugas(t.deadline);
                           const isSelected = tugasTerpilih === t.id;
                           const kumpulFilter = dataPengumpulan.filter(p => p.tugas_id === t.id);
+                          
+                          // Hitung Berapa yang On-Time dan Overdue (MENGAKOMODASI 'Tepat Waktu' DAN 'On-Time')
+                          const totalKumpul = kumpulFilter.length;
+                          const onTimeCount = kumpulFilter.filter(p => p.status_waktu === 'Tepat Waktu' || p.status_waktu === 'On-Time').length;
+                          const overdueCount = totalKumpul - onTimeCount;
 
                           return (
-                            <div key={t.id} className={`p-6 transition-all ${isSelected ? 'bg-purple-50/20' : 'hover:bg-slate-50/40'}`}>
+                            <div key={t.id} className={`p-6 transition-all ${isSelected ? 'bg-purple-50/10' : 'hover:bg-slate-50/40'}`}>
                               <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-3">
-                                <div>
-                                  <h3 className="font-bold text-slate-900 text-base">{t.nama_tugas}</h3>
-                                  <p className="text-xs text-slate-400 mt-1">Deadline: {new Date(t.deadline).toLocaleString('id-ID')} WIB</p>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-3 flex-wrap">
+                                    <h3 className="font-bold text-slate-900 text-base">{t.nama_tugas}</h3>
+                                    <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-extrabold tracking-wider uppercase border ${cdown.kelasCss}`}>
+                                      {cdown.teks}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-400 mt-1.5 font-medium">Deadline Matrix: {new Date(t.deadline).toLocaleString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} WIB</p>
                                 </div>
-                                <div className="flex gap-2 shrink-0">
-                                  <button onClick={() => setTugasTerpilih(isSelected ? null : t.id)} className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${isSelected ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:bg-purple-50'}`}>
-                                    {isSelected ? 'Tutup Pantauan' : 'Lihat Pengumpulan'}
+                                
+                                <div className="flex gap-1.5 shrink-0 w-full sm:w-auto justify-end">
+                                  <button onClick={() => bukaModalEditTugas(t)} className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-100 p-2 rounded-xl transition-all shadow-sm bg-white" title="Modify Task Constraints">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                                   </button>
-                                  <button onClick={() => hapusTugasDB(t.id)} className="text-rose-500 hover:bg-rose-50 border border-transparent hover:border-rose-200 p-1.5 rounded-lg transition-all" title="Hapus Tugas">
+                                  <button onClick={() => hapusTugasDB(t.id)} className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-100 p-2 rounded-xl transition-all shadow-sm bg-white" title="Terminate Task Matrix">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                   </button>
+                                  <button onClick={() => setTugasTerpilih(isSelected ? null : t.id)} className={`px-4 py-2 rounded-xl text-xs font-bold border shadow-sm transition-all ${isSelected ? 'bg-purple-600 text-white border-purple-600' : 'bg-white text-purple-600 border-purple-200 hover:bg-purple-50'}`}>
+                                    {isSelected ? 'Close Stream' : 'Track Submissions'}
+                                  </button>
                                 </div>
                               </div>
 
-                              <div className="flex items-center gap-2 mt-4">
-                                <span className={`px-3 py-1 rounded-md text-[10px] font-extrabold tracking-wider uppercase ${cdown.kelasCss}`}>
-                                  {cdown.teks}
-                                </span>
-                                <span className="text-xs text-slate-400 font-medium">Ket: {t.keterangan_tugas}</span>
+                              <div className="flex flex-wrap items-center gap-y-2 gap-x-4 mt-4 text-xs font-semibold text-slate-500">
+                                <div className="bg-slate-100 border border-slate-200/60 px-2.5 py-1 rounded-lg">
+                                  📊 Tracker: <span className="font-extrabold text-slate-800">{totalKumpul} Submitted</span> ({onTimeCount} On-Time / <span className={overdueCount > 0 ? 'text-rose-600 font-bold' : ''}>{overdueCount} Overdue</span>)
+                                </div>
+                                <div className="truncate max-w-sm font-medium text-slate-400"><span className="font-bold text-slate-500">Note:</span> {t.keterangan_tugas}</div>
                               </div>
 
+                              {/* PANEL EXPANDED SUBMISSIONS TUGAS */}
                               {isSelected && (
                                 <div className="mt-6 pt-6 border-t border-purple-100 animate-fade-in">
-                                  <div className="flex justify-between items-center mb-4">
-                                    <h4 className="text-xs font-extrabold text-purple-900 uppercase tracking-widest">Kolom Pengumpulan Peserta ({kumpulFilter.length})</h4>
-                                  </div>
+                                  <h4 className="text-xs font-extrabold text-purple-950 uppercase tracking-wider mb-3">Participant Submission Logs</h4>
 
                                   {kumpulFilter.length === 0 ? (
-                                    <div className="p-6 text-center text-xs font-medium text-slate-400 border border-dashed border-slate-200 rounded-xl bg-white">Belum ada peserta yang mengumpulkan tugas ini.</div>
+                                    <div className="p-6 text-center text-xs font-medium text-slate-400 border border-dashed border-slate-200 rounded-xl bg-white/50">No submissions uploaded for this ledger yet.</div>
                                   ) : (
                                     <div className="border border-purple-100 rounded-xl overflow-hidden bg-white shadow-sm">
                                       <table className="w-full text-xs text-left">
                                         <thead className="bg-purple-50/40 text-[10px] font-bold uppercase tracking-wider text-purple-700 border-b border-purple-100">
                                           <tr>
-                                            <th className="px-4 py-3">Nama Lengkap / Kelompok</th>
-                                            <th className="px-4 py-3 text-center">Waktu Kirim</th>
-                                            <th className="px-4 py-3 text-center">Status</th>
-                                            <th className="px-4 py-3 text-right">Tautan Tugas</th>
+                                            <th className="px-4 py-3">Student Name / Group</th>
+                                            <th className="px-4 py-3 text-center">Upload Timestamp</th>
+                                            <th className="px-4 py-3 text-center">Compliance</th>
+                                            <th className="px-4 py-3 text-right">Action Gate</th>
                                           </tr>
                                         </thead>
                                         <tbody className="divide-y divide-purple-50">
-                                          {kumpulFilter.map((sub) => (
-                                            <tr key={sub.id} className="hover:bg-purple-50/10 transition-colors">
-                                              <td className="px-4 py-3.5 font-bold text-slate-800">{sub.nama_peserta}</td>
-                                              <td className="px-4 py-3 text-center text-slate-500 font-semibold">{new Date(sub.waktu_pengumpulan).toLocaleString('id-ID')} WIB</td>
-                                              <td className="px-4 py-3 text-center">
-                                                <span className={`px-2 py-0.5 rounded font-extrabold uppercase text-[9px] ${sub.status_waktu === 'Tepat Waktu' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                                                  {sub.status_waktu}
-                                                </span>
-                                              </td>
-                                              <td className="px-4 py-3 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                  <a href={sub.link_tautan} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-800 font-bold bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded">Buka Dokumen</a>
-                                                  <button onClick={() => deleteSubmissionLog(sub.id)} className="text-rose-400 hover:text-rose-600 p-1 font-bold">✕</button>
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          ))}
+                                          {kumpulFilter.map((sub) => {
+                                            const isOnTime = sub.status_waktu === 'Tepat Waktu' || sub.status_waktu === 'On-Time';
+                                            return (
+                                              <tr key={sub.id} className="hover:bg-purple-50/10 transition-colors">
+                                                <td className="px-4 py-3.5 font-bold text-slate-800">{sub.nama_peserta}</td>
+                                                <td className="px-4 py-3 text-center text-slate-500 font-semibold">
+                                                  {new Date(sub.waktu_pengumpulan).toLocaleString('id-ID', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })} WIB
+                                                </td>
+                                                <td className="px-4 py-3 text-center">
+                                                  <span className={`px-2 py-0.5 rounded font-extrabold uppercase text-[9px] ${isOnTime ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                                    {isOnTime ? 'On Time' : 'Overdue'}
+                                                  </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-right">
+                                                  <div className="flex items-center justify-end gap-2">
+                                                    <a href={sub.link_tautan} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:text-purple-800 font-bold bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded shadow-sm border border-purple-100 transition-all">Open Document</a>
+                                                    <button onClick={() => deleteSubmissionLog(sub.id)} className="text-slate-300 hover:text-rose-600 p-1.5 rounded-lg transition-colors">
+                                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                    </button>
+                                                  </div>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
                                         </tbody>
                                       </table>
                                     </div>
@@ -1099,7 +1180,7 @@ export default function RekapitulasiAdmin() {
         </div>
       )}
 
-      {/* MODAL EDIT MATRIX */}
+      {/* MODAL EDIT MATRIX ABSENSI */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
           <div className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl border border-slate-100 relative">
@@ -1132,6 +1213,35 @@ export default function RekapitulasiAdmin() {
                 <button onClick={simpanPerubahanEdit} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl text-sm">Commit Changes</button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT DATA PENUGASAN (BARU) */}
+      {isEditingTugas && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-[2rem] p-6 sm:p-8 w-full max-w-md shadow-2xl border border-slate-100 relative">
+            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight mb-1">Modify Assignment Constraints</h3>
+            <p className="text-xs text-slate-400 font-medium uppercase mt-1">Update task properties dynamically</p>
+            
+            <form onSubmit={simpanPerubahanEditTugas} className="flex flex-col gap-5 mt-6">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Task Title</label>
+                <input type="text" value={editNamaTugas} onChange={(e) => setEditNamaTugas(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold text-black focus:outline-none focus:ring-2 focus:ring-purple-500/20" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Adjust Deadline</label>
+                <input type="datetime-local" value={editDeadlineTugas} onChange={(e) => setEditDeadlineTugas(e.target.value)} required className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-bold text-black" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Instructions / Criteria</label>
+                <textarea value={editKeteranganTugas} onChange={(e) => setEditKeteranganTugas(e.target.value)} rows={3} className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl text-sm font-semibold text-black focus:outline-none focus:ring-2 focus:ring-purple-500/20 resize-none" />
+              </div>
+              <div className="flex gap-3 mt-4">
+                <button type="button" onClick={() => setIsEditingTugas(false)} className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3.5 rounded-xl text-sm">Dismiss</button>
+                <button type="submit" className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-3.5 rounded-xl text-sm shadow-md">Apply Updates</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
