@@ -27,6 +27,7 @@ interface Tugas {
   nama_tugas: string;
   deadline: string;
   keterangan_tugas: string;
+  is_closed?: boolean; // PENAMBAHAN FITUR CLOSE SUBMISSION
 }
 
 interface Pengumpulan {
@@ -53,7 +54,7 @@ export default function RekapitulasiAdmin() {
   const [dataPengumpulan, setDataPengumpulan] = useState<Pengumpulan[]>([]);
   const [tugasTerpilih, setTugasTerpilih] = useState<string | null>(null);
   
-  // State Edit Tugas (Baru)
+  // State Edit Tugas
   const [isEditingTugas, setIsEditingTugas] = useState<boolean>(false);
   const [editTugasId, setEditTugasId] = useState<string>("");
   const [editNamaTugas, setEditNamaTugas] = useState<string>("");
@@ -89,12 +90,10 @@ export default function RekapitulasiAdmin() {
   const [inputNamaPersonel, setInputNamaPersonel] = useState("");
   const [inputPeranPersonel, setInputPeranPersonel] = useState("PESERTA");
 
-  // State Form Pembuatan Tugas
   const [inputNamaTugas, setInputNamaTugas] = useState("");
   const [inputDeadlineTugas, setInputDeadlineTugas] = useState("");
   const [inputKeteranganTugas, setInputKeteranganTugas] = useState("");
 
-  // Waktu Berjalan untuk Live Countdown Tugas Presisi Tinggi
   const [currentTimeTick, setCurrentTimeTick] = useState<Date>(new Date());
 
   useEffect(() => {
@@ -122,7 +121,6 @@ export default function RekapitulasiAdmin() {
     const { data: personelData, error: personelError } = await supabase.from('master_personel').select('*').order('nama', { ascending: true });
     if (!personelError && personelData) setMasterPersonel(personelData as Personel[]);
     
-    // Fetch Data Tugas & Pengumpulan
     const { data: tugasData } = await supabase.from('master_tugas').select('*').order('deadline', { ascending: true });
     if (tugasData) setDataTugas(tugasData as Tugas[]);
 
@@ -147,7 +145,8 @@ export default function RekapitulasiAdmin() {
     const { error } = await supabase.from('master_tugas').insert([{
       nama_tugas: inputNamaTugas,
       deadline: new Date(inputDeadlineTugas).toISOString(),
-      keterangan_tugas: inputKeteranganTugas.trim() || '-'
+      keterangan_tugas: inputKeteranganTugas.trim() || '-',
+      is_closed: false // Default buka saat dibuat
     }]);
 
     if (!error) {
@@ -162,7 +161,6 @@ export default function RekapitulasiAdmin() {
     setMemuat(false);
   };
 
-  // Membuka Modal Edit Tugas
   const bukaModalEditTugas = (t: Tugas) => {
     const localDate = new Date(t.deadline);
     localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
@@ -175,7 +173,6 @@ export default function RekapitulasiAdmin() {
     setIsEditingTugas(true);
   };
 
-  // Menyimpan Perubahan Update Data Tugas
   const simpanPerubahanEditTugas = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editNamaTugas.trim() || !editDeadlineTugas) return alert("Task name and deadline cannot be empty!");
@@ -194,6 +191,23 @@ export default function RekapitulasiAdmin() {
     } else {
       alert(`Database Error: ${error.message}`);
     }
+    setMemuat(false);
+  };
+
+  // LOGIKA KUNCI/BUKA TUGAS
+  const toggleCloseTugas = async (t: Tugas) => {
+    const isSaatIniTutup = t.is_closed;
+    const konfirmasi = window.confirm(
+      isSaatIniTutup 
+        ? "Buka kembali pengumpulan tugas ini? Peserta akan bisa submit lagi." 
+        : "Tutup paksa pengumpulan tugas ini? Peserta TIDAK AKAN BISA submit lagi meski belum deadline."
+    );
+    if (!konfirmasi) return;
+    
+    setMemuat(true);
+    const { error } = await supabase.from('master_tugas').update({ is_closed: !isSaatIniTutup }).eq('id', t.id);
+    if (!error) await ambilData();
+    else alert(`Database Error: ${error.message}`);
     setMemuat(false);
   };
 
@@ -218,7 +232,16 @@ export default function RekapitulasiAdmin() {
     await ambilData();
   };
 
-  const kalkulasiSisaWaktuTugas = (deadlineISO: string) => {
+  // Kalkulasi ditambahkan deteksi `is_closed`
+  const kalkulasiSisaWaktuTugas = (deadlineISO: string, isClosed?: boolean) => {
+    if (isClosed) {
+      return { 
+        teks: `Submissions Locked by Admin`, 
+        status: 'LEWAT', 
+        kelasCss: 'text-rose-600 bg-rose-50 border-rose-200' 
+      };
+    }
+
     const targetDl = new Date(deadlineISO);
     const selisihMs = targetDl.getTime() - currentTimeTick.getTime();
 
@@ -531,7 +554,6 @@ export default function RekapitulasiAdmin() {
     );
   }
 
-  // --- LOGIKA DATA: INDIVIDU ---
   const dataSesuaiTab = dataAbsensi.filter(d => (d.peran || 'PESERTA') === tabAktif);
   
   const dataIndividu = dataSesuaiTab.reduce((hasil, baris) => {
@@ -550,7 +572,6 @@ export default function RekapitulasiAdmin() {
     return hasil;
   }, {} as Record<string, Absensi[]>);
 
-  // --- LOGIKA DATA: HARIAN ---
   const dataHarian = dataAbsensi.reduce((hasil, baris) => {
     const tanggal = new Date(baris.waktu_absen).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     if (!hasil[tanggal]) hasil[tanggal] = [];
@@ -560,7 +581,6 @@ export default function RekapitulasiAdmin() {
   const daftarTanggalHarian = Object.keys(dataHarian);
   const rekapTanggalDetail = tanggalTerpilih ? (dataHarian[tanggalTerpilih] || []) : [];
 
-  // --- LOGIKA LIVE TRACKER DATA ---
   const isToday = (dateString: string) => {
     const d = new Date(dateString);
     const today = new Date();
@@ -941,17 +961,17 @@ export default function RekapitulasiAdmin() {
                     ) : (
                       <div className="divide-y divide-slate-100">
                         {dataTugas.map((t) => {
-                          const cdown = kalkulasiSisaWaktuTugas(t.deadline);
+                          const cdown = kalkulasiSisaWaktuTugas(t.deadline, t.is_closed);
                           const isSelected = tugasTerpilih === t.id;
                           const kumpulFilter = dataPengumpulan.filter(p => p.tugas_id === t.id);
                           
-                          // Hitung Berapa yang On-Time dan Overdue (MENGAKOMODASI 'Tepat Waktu' DAN 'On-Time')
+                          // Hitung Berapa yang On-Time dan Overdue
                           const totalKumpul = kumpulFilter.length;
                           const onTimeCount = kumpulFilter.filter(p => p.status_waktu === 'Tepat Waktu' || p.status_waktu === 'On-Time').length;
                           const overdueCount = totalKumpul - onTimeCount;
 
                           return (
-                            <div key={t.id} className={`p-6 transition-all ${isSelected ? 'bg-purple-50/10' : 'hover:bg-slate-50/40'}`}>
+                            <div key={t.id} className={`p-6 transition-all ${isSelected ? 'bg-purple-50/10' : 'hover:bg-slate-50/40'} ${t.is_closed ? 'opacity-80 grayscale-[20%]' : ''}`}>
                               <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-3">
                                 <div className="min-w-0 flex-1">
                                   <div className="flex items-center gap-3 flex-wrap">
@@ -964,6 +984,15 @@ export default function RekapitulasiAdmin() {
                                 </div>
                                 
                                 <div className="flex gap-1.5 shrink-0 w-full sm:w-auto justify-end">
+                                  {/* TOMBOL KUNCI/BUKA TUGAS */}
+                                  <button onClick={() => toggleCloseTugas(t)} className={`border p-2 rounded-xl transition-all shadow-sm ${t.is_closed ? 'text-amber-500 hover:bg-amber-50 border-amber-200 bg-amber-50/30' : 'text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border-slate-100 bg-white'}`} title={t.is_closed ? "Buka Pengumpulan" : "Tutup Pengumpulan"}>
+                                    {t.is_closed ? (
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M8 11V7a4 4 0 118 0v4M5 21h14a2 2 0 002-2v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2z"></path></svg>
+                                    )}
+                                  </button>
+
                                   <button onClick={() => bukaModalEditTugas(t)} className="text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-slate-100 p-2 rounded-xl transition-all shadow-sm bg-white" title="Modify Task Constraints">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                                   </button>

@@ -114,7 +114,6 @@ export default function Absensi() {
         const userLng = pos.coords.longitude;
         const jarakKeItera = hitungJarakMeter(userLat, userLng, ITERA_COORDS.lat, ITERA_COORDS.lng);
 
-        // FITUR BARU: Jika merupakan asisten, bypass pembatasan wilayah perimeter radius
         if (jalur !== 'asisten' && jarakKeItera > RADIUS_MAKSIMAL) {
           setStatus(`Access Denied: Anda berada di luar area izin (${Math.round(jarakKeItera)} meter). Batas perimeter maksimal adalah ${RADIUS_MAKSIMAL}m.`);
           return;
@@ -125,7 +124,6 @@ export default function Absensi() {
         setStatus("");
       },
       (err) => {
-        // Jika asisten mengalami kegagalan modul GPS/izin lokasi, tetap loloskan karena jaraknya bebas
         if (jalur === 'asisten') {
           setLokasi({ lat: 0, lng: 0 });
           setLangkah(2);
@@ -219,7 +217,8 @@ export default function Absensi() {
       <div className="absolute inset-0 bg-[url('/bg-plts.jpg')] bg-cover bg-center bg-no-repeat bg-fixed z-0"></div>
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm z-0"></div>
 
-      <div className={`relative z-10 bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full max-w-md mx-auto border border-white/20 border-t-[6px] transition-all duration-500 ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
+      {/* Box Putih Dinamis: max-w-md pada mobile, otomatis melebar ke max-w-2xl pada komputer saat kamera aktif */}
+      <div className={`relative z-10 bg-white/95 backdrop-blur-md p-6 sm:p-8 rounded-[2rem] shadow-2xl w-full mx-auto border border-white/20 border-t-[6px] transition-all duration-500 ${langkah === 2 ? 'max-w-md md:max-w-2xl' : 'max-w-md'} ${jalur === 'asisten' ? 'border-t-amber-400' : 'border-t-blue-600'}`}>
         {langkah !== 3 && (
           <>
             <div className="flex flex-col items-center mb-6 sm:mb-8 mt-1">
@@ -240,19 +239,19 @@ export default function Absensi() {
                   <label className="block text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Nama Lengkap</label>
                   <input 
                     type="text" 
-                    placeholder="Ketik nama Anda..." 
-                    value={nama || ""}
+                    placeholder="Ketik Nama Anda..." 
+                    value={nama}
                     onChange={handleKetikNama}
-                    onFocus={() => { if (nama) setTampilkanSaran(true); }}
-                    className="w-full bg-slate-50 border border-slate-200 p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-800 text-slate-900 font-semibold text-base placeholder-slate-300 transition-all shadow-sm"
+                    onFocus={() => nama && setTampilkanSaran(true)}
+                    className="w-full bg-gray-50 border border-gray-200 p-3 sm:p-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-black text-base placeholder-gray-400 transition-all"
                   />
                   {tampilkanSaran && rekomendasi.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full bg-white border border-slate-100 rounded-xl shadow-2xl mt-2 z-50 max-h-44 overflow-y-auto overflow-hidden divide-y divide-slate-50 border-t-[3px] border-t-slate-800">
+                    <div className="absolute left-0 right-0 top-full bg-white border border-gray-100 rounded-xl shadow-xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
                       {rekomendasi.map((namaSaran) => (
                         <div
                           key={namaSaran}
                           onClick={() => pilihNamaRekomendasi(namaSaran)}
-                          className="p-3.5 hover:bg-slate-50 text-slate-800 font-semibold text-sm cursor-pointer transition-colors"
+                          className="p-3 sm:p-3.5 hover:bg-gray-50 text-gray-800 text-sm cursor-pointer border-b border-gray-50 last:border-none transition-colors"
                         >
                           {namaSaran}
                         </div>
@@ -263,19 +262,21 @@ export default function Absensi() {
                 
                 <button 
                   onClick={lanjutKeKamera} 
-                  className={`w-full py-4 rounded-xl font-bold text-white text-sm sm:text-base shadow-lg transition-all hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'}`}
+                  className={`w-full py-3.5 sm:py-4 rounded-xl font-semibold text-white text-sm sm:text-base shadow-sm transition-all hover:shadow-md hover:-translate-y-0.5 ${jalur === 'asisten' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-blue-600 hover:bg-blue-700'}`}
                 >
-                  NEXT
+                  Continue
                 </button>
-                <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-bold text-slate-400 hover:text-slate-600 mt-1 transition-colors text-center w-full uppercase tracking-wider">
-                  Kembali ke Halaman Utama
+                <button onClick={() => window.location.href = "/"} className="text-xs sm:text-sm font-medium text-gray-400 hover:text-gray-600 mt-2 transition-colors text-center w-full">
+                  Back to Home
                 </button>
               </div>
             )}
 
             {langkah === 2 && (
-              <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in">
-                <div className="w-full rounded-2xl overflow-hidden shadow-md border border-slate-100 bg-black aspect-[3/4] flex items-center justify-center relative group">
+              <div className="flex flex-col gap-4 sm:gap-5 items-center animate-fade-in w-full">
+                
+                {/* Kamera Dinamis: Otomatis aspect-[3/4] di HP dan aspect-video (Landscape) di Desktop */}
+                <div className="w-full rounded-2xl overflow-hidden shadow-inner border border-gray-100 bg-gray-50 aspect-[3/4] md:aspect-video flex items-center justify-center bg-black relative group transition-all duration-300">
                   <Webcam 
                     ref={webcamRef} 
                     screenshotFormat="image/jpeg" 
@@ -302,14 +303,14 @@ export default function Absensi() {
                     {(waktuLive.getHours() > BATAS_PAGI.jam || (waktuLive.getHours() === BATAS_PAGI.jam && waktuLive.getMinutes() > BATAS_PAGI.menit)) && waktuLive.getHours() < 12 && (
                       <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 p-3.5 rounded-xl animate-fade-in shadow-sm">
                         <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-bold text-rose-700 leading-normal">Masa kehadiran Pagi berakhir. Riwayat log Anda akan disimpan dengan flag <span className="underline decoration-wavy">LATE / TERLAMBAT</span>.</p>
+                        <p className="text-[11px] font-medium text-rose-700 leading-relaxed">Melewati batas Absen Pagi. Log ini akan tercatat dengan status <span className="font-extrabold uppercase">Terlambat</span>.</p>
                       </div>
                     )}
                     
                     {(waktuLive.getHours() > BATAS_SIANG.jam || (waktuLive.getHours() === BATAS_SIANG.jam && waktuLive.getMinutes() > BATAS_SIANG.menit)) && waktuLive.getHours() >= 12 && (
                       <div className="flex items-start gap-2.5 bg-rose-50 border border-rose-200 p-3.5 rounded-xl animate-fade-in shadow-sm">
-                        <svg className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                        <p className="text-[11px] font-bold text-rose-700 leading-normal">Masa kehadiran Siang berakhir. Riwayat log Anda akan disimpan dengan flag <span className="underline decoration-wavy">LATE / TERLAMBAT</span>.</p>
+                        <svg className="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                        <p className="text-[11px] font-medium text-rose-700 leading-relaxed">Melewati batas Absen Siang. Log ini akan tercatat dengan status <span className="font-extrabold uppercase">Terlambat</span>.</p>
                       </div>
                     )}
                   </div>
@@ -336,13 +337,12 @@ export default function Absensi() {
         {langkah === 3 && nota && (
           <div className="flex flex-col items-center text-center py-2 animate-fade-in">
             <div className="w-16 h-16 bg-emerald-50 text-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-inner border border-emerald-200"><svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight mb-1">Presensi Sukses!</h1>
-            <p className="text-xs text-slate-400 font-extrabold uppercase tracking-widest mb-8">Digital Receipt Ledger Locked</p>
-            
-            <div className="w-full bg-slate-50/50 border border-slate-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8 shadow-sm">
+            <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight mb-1">Presensi Sukses!</h1>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-widest mb-8">Digital Log Saved</p>
+            <div className="w-full bg-gray-50/50 border border-gray-100 rounded-2xl p-5 text-left flex flex-col gap-4 mb-8">
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-0.5">Nama Personel</span>
-                <span className="text-base font-bold text-slate-800 leading-tight block">{nota.nama}</span>
+                <span className="text-[10px] uppercase font-bold text-gray-400 tracking-wider block mb-0.5">Nama Personel</span>
+                <span className="text-base font-bold text-gray-800 leading-tight block">{nota.nama}</span>
               </div>
               <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-100">
                 <div>

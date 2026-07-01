@@ -7,6 +7,7 @@ interface Tugas {
   nama_tugas: string;
   deadline: string;
   keterangan_tugas: string;
+  is_closed?: boolean; // PENTING: Mengambil status kunci dari Admin
 }
 
 export default function HalamanPengumpulanTugas() {
@@ -101,7 +102,12 @@ export default function HalamanPengumpulanTugas() {
     }) + ' WIB';
   };
 
-  const kalkulasiSisaWaktu = (deadlineISO: string) => {
+  // Kalkulasi ditambahkan parameter isClosed untuk mendeteksi kunci dari admin
+  const kalkulasiSisaWaktu = (deadlineISO: string, isClosed?: boolean) => {
+    if (isClosed) {
+      return { teks: `Submissions Locked`, isTelat: true };
+    }
+
     const selisihMs = new Date(deadlineISO).getTime() - waktuSekarang.getTime();
 
     if (selisihMs < 0) {
@@ -125,6 +131,7 @@ export default function HalamanPengumpulanTugas() {
   const kirimTugas = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!tugasTerpilih) return;
+    if (tugasTerpilih.is_closed) return setStatusAksi("Assignment is locked!");
     
     // Validasi Bahasa Inggris
     if (tipePengumpulan === 'LINK' && !linkTugas.trim()) return setStatusAksi("Please provide a valid URL!");
@@ -170,7 +177,6 @@ export default function HalamanPengumpulanTugas() {
     setStatusAksi("Saving record to database...");
     const isTerlambat = new Date().getTime() > new Date(tugasTerpilih.deadline).getTime();
     
-    // Status disimpan dalam bahasa Inggris (Pastikan Admin Panel disesuaikan jika perlu filter)
     const statusPengumpulan = isTerlambat ? "Overdue" : "On-Time";
 
     const { error } = await supabase.from('pengumpulan_tugas').insert([{
@@ -229,13 +235,16 @@ export default function HalamanPengumpulanTugas() {
                 <div className="text-center py-10 text-slate-500 font-medium bg-white/50 rounded-xl border border-dashed border-purple-200">No active assignments published by Admin.</div>
               ) : (
                 daftarTugas.map(tugas => {
-                  const sisa = kalkulasiSisaWaktu(tugas.deadline);
+                  const sisa = kalkulasiSisaWaktu(tugas.deadline, tugas.is_closed);
                   return (
-                    <div key={tugas.id} onClick={() => setTugasTerpilih(tugas)} className="group bg-white border border-purple-100 hover:border-purple-400 p-5 rounded-2xl cursor-pointer transition-all hover:shadow-lg shadow-sm">
+                    <div key={tugas.id} onClick={() => setTugasTerpilih(tugas)} className={`group bg-white border border-purple-100 hover:border-purple-400 p-5 rounded-2xl cursor-pointer transition-all hover:shadow-lg shadow-sm ${tugas.is_closed ? 'opacity-70 grayscale-[30%]' : ''}`}>
                       <div className="flex justify-between items-start mb-3">
-                        <h3 className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors text-base">{tugas.nama_tugas}</h3>
-                        <div className="w-8 h-8 rounded-full bg-purple-50 flex items-center justify-center group-hover:bg-purple-600 transition-colors shrink-0">
-                          <svg className="w-4 h-4 text-purple-600 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
+                        <h3 className="font-bold text-slate-900 group-hover:text-purple-700 transition-colors text-base flex items-center gap-2">
+                          {tugas.is_closed && <svg className="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>}
+                          {tugas.nama_tugas}
+                        </h3>
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${tugas.is_closed ? 'bg-rose-50' : 'bg-purple-50 group-hover:bg-purple-600'}`}>
+                          <svg className={`w-4 h-4 ${tugas.is_closed ? 'text-rose-400' : 'text-purple-600 group-hover:text-white'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7"></path></svg>
                         </div>
                       </div>
                       
@@ -262,7 +271,7 @@ export default function HalamanPengumpulanTugas() {
         ) : (
           /* ================= LAYAR 2: FORM PENGUMPULAN ================= */
           <div className="bg-white/95 backdrop-blur-md rounded-[2rem] shadow-xl border border-white/20 animate-fade-in relative overflow-hidden w-full">
-            <div className="absolute top-0 w-full h-1.5 bg-gradient-to-r from-purple-400 to-purple-700"></div>
+            <div className={`absolute top-0 w-full h-1.5 bg-gradient-to-r ${tugasTerpilih.is_closed ? 'from-rose-400 to-rose-700' : 'from-purple-400 to-purple-700'}`}></div>
             
             <div className="p-6 sm:p-8">
               <button onClick={() => setTugasTerpilih(null)} className="text-xs font-bold text-slate-500 hover:text-purple-700 mb-6 flex items-center gap-1.5 transition-colors">
@@ -270,7 +279,10 @@ export default function HalamanPengumpulanTugas() {
               </button>
 
               <div className="mb-8 border-b border-slate-100 pb-6">
-                <h2 className="text-2xl font-black text-slate-900 leading-tight mb-4">{tugasTerpilih.nama_tugas}</h2>
+                <h2 className="text-2xl font-black text-slate-900 leading-tight mb-4 flex items-center gap-2">
+                  {tugasTerpilih.is_closed && <svg className="w-6 h-6 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>}
+                  {tugasTerpilih.nama_tugas}
+                </h2>
                 <div className="bg-purple-50/50 p-4 rounded-xl border border-purple-100 mb-4">
                   <p className="text-sm text-slate-700 leading-relaxed font-medium">{tugasTerpilih.keterangan_tugas}</p>
                 </div>
@@ -282,107 +294,118 @@ export default function HalamanPengumpulanTugas() {
                     <span className="text-xs font-extrabold text-slate-800">{formatWaktuDeadline(tugasTerpilih.deadline)}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className={`text-[10px] font-extrabold tracking-wider uppercase px-3 py-2 rounded-lg border ${kalkulasiSisaWaktu(tugasTerpilih.deadline).isTelat ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                      {kalkulasiSisaWaktu(tugasTerpilih.deadline).teks}
+                    <span className={`text-[10px] font-extrabold tracking-wider uppercase px-3 py-2 rounded-lg border ${kalkulasiSisaWaktu(tugasTerpilih.deadline, tugasTerpilih.is_closed).isTelat ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+                      {kalkulasiSisaWaktu(tugasTerpilih.deadline, tugasTerpilih.is_closed).teks}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <form onSubmit={kirimTugas} className="flex flex-col gap-6">
-                
-                {/* Autocomplete Nama */}
-                <div className="relative">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Participant Identity</label>
-                  <input 
-                    type="text" 
-                    value={namaPeserta ?? ""}
-                    onChange={handleKetikNama}
-                    onFocus={() => {
-                      if (!namaPeserta) {
-                        setRekomendasi(daftarNama);
-                        setTampilkanSaran(true);
-                      }
-                    }}
-                    placeholder="Type your name or group initials..." 
-                    className="w-full bg-white border border-slate-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-slate-900 font-semibold text-sm transition-all shadow-sm placeholder:text-slate-400"
-                    required
-                  />
-                  {tampilkanSaran && rekomendasi.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full bg-white border border-slate-100 rounded-xl shadow-2xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
-                      {rekomendasi.map((namaSaran) => (
-                        <div
-                          key={namaSaran}
-                          onClick={() => pilihNama(namaSaran)}
-                          className={`p-4 hover:bg-purple-50 text-sm cursor-pointer border-b border-slate-50 last:border-none ${namaSaran.startsWith("Kelompok") ? 'font-black text-purple-700 bg-purple-50/40' : 'font-semibold text-slate-700'}`}
-                        >
-                          {namaSaran}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* TOGGLE TIPE PENGUMPULAN */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Submission Format</label>
-                  <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner">
-                    <button type="button" onClick={() => setTipePengumpulan('LINK')} className={`flex-1 py-3 text-xs font-bold rounded-lg transition-all ${tipePengumpulan === 'LINK' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                      URL Link
-                    </button>
-                    <button type="button" onClick={() => setTipePengumpulan('FILE')} className={`flex-1 py-3 text-xs font-bold rounded-lg transition-all ${tipePengumpulan === 'FILE' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}>
-                      File Upload
-                    </button>
+              {/* LOGIKA PENGUNCIAN FORM */}
+              {tugasTerpilih.is_closed ? (
+                <div className="bg-rose-50/50 border-2 border-dashed border-rose-200 rounded-2xl p-8 text-center flex flex-col items-center justify-center animate-fade-in">
+                  <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-sm mb-4 text-rose-500 border border-rose-100">
+                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                   </div>
+                  <h3 className="text-lg font-black text-rose-900 mb-2">Submission Locked</h3>
+                  <p className="text-xs font-semibold text-rose-600/80 leading-relaxed max-w-sm">The administrator has closed this assignment. No further submissions or modifications are allowed at this time.</p>
                 </div>
-
-                {/* INPUT DINAMIS */}
-                {tipePengumpulan === 'LINK' ? (
-                  <div className="animate-fade-in">
+              ) : (
+                <form onSubmit={kirimTugas} className="flex flex-col gap-6">
+                  
+                  {/* Autocomplete Nama */}
+                  <div className="relative">
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Participant Identity</label>
                     <input 
-                      type="url" 
-                      value={linkTugas ?? ""}
-                      onChange={(e) => setLinkTugas(e.target.value || "")}
-                      placeholder="https://docs.google.com/..." 
+                      type="text" 
+                      value={namaPeserta ?? ""}
+                      onChange={handleKetikNama}
+                      onFocus={() => {
+                        if (!namaPeserta) {
+                          setRekomendasi(daftarNama);
+                          setTampilkanSaran(true);
+                        }
+                      }}
+                      placeholder="Type your name or group initials..." 
                       className="w-full bg-white border border-slate-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-slate-900 font-semibold text-sm transition-all shadow-sm placeholder:text-slate-400"
-                      required={tipePengumpulan === 'LINK'}
+                      required
                     />
-                    <p className="text-[10px] text-purple-600 mt-2 font-bold uppercase tracking-wide flex items-center gap-1.5">
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                      Ensure the link is set to Public access.
-                    </p>
+                    {tampilkanSaran && rekomendasi.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full bg-white border border-slate-100 rounded-xl shadow-2xl mt-2 z-50 max-h-48 overflow-y-auto overflow-hidden">
+                        {rekomendasi.map((namaSaran) => (
+                          <div
+                            key={namaSaran}
+                            onClick={() => pilihNama(namaSaran)}
+                            className={`p-4 hover:bg-purple-50 text-sm cursor-pointer border-b border-slate-50 last:border-none ${namaSaran.startsWith("Kelompok") ? 'font-black text-purple-700 bg-purple-50/40' : 'font-semibold text-slate-700'}`}
+                          >
+                            {namaSaran}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="animate-fade-in">
-                    <div className="relative border-2 border-dashed border-purple-300 rounded-xl p-6 bg-purple-50/40 hover:bg-purple-100/50 transition-colors text-center group cursor-pointer">
+
+                  {/* TOGGLE TIPE PENGUMPULAN */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Submission Format</label>
+                    <div className="flex bg-slate-100 p-1.5 rounded-xl border border-slate-200 shadow-inner">
+                      <button type="button" onClick={() => setTipePengumpulan('LINK')} className={`flex-1 py-3 text-xs font-bold rounded-lg transition-all ${tipePengumpulan === 'LINK' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                        URL Link
+                      </button>
+                      <button type="button" onClick={() => setTipePengumpulan('FILE')} className={`flex-1 py-3 text-xs font-bold rounded-lg transition-all ${tipePengumpulan === 'FILE' ? 'bg-white shadow text-purple-700' : 'text-slate-500 hover:text-slate-700'}`}>
+                        File Upload
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* INPUT DINAMIS */}
+                  {tipePengumpulan === 'LINK' ? (
+                    <div className="animate-fade-in">
                       <input 
-                        type="file" 
-                        onChange={handleFileChange}
-                        accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
-                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                        required={tipePengumpulan === 'FILE'}
+                        type="url" 
+                        value={linkTugas ?? ""}
+                        onChange={(e) => setLinkTugas(e.target.value || "")}
+                        placeholder="https://docs.google.com/..." 
+                        className="w-full bg-white border border-slate-300 p-4 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500/40 text-slate-900 font-semibold text-sm transition-all shadow-sm placeholder:text-slate-400"
+                        required={tipePengumpulan === 'LINK'}
                       />
-                      <div className="flex flex-col items-center justify-center pointer-events-none">
-                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md mb-3 text-purple-600 group-hover:scale-110 transition-transform">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                      <p className="text-[10px] text-purple-600 mt-2 font-bold uppercase tracking-wide flex items-center gap-1.5">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        Ensure the link is set to Public access.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="animate-fade-in">
+                      <div className="relative border-2 border-dashed border-purple-300 rounded-xl p-6 bg-purple-50/40 hover:bg-purple-100/50 transition-colors text-center group cursor-pointer">
+                        <input 
+                          type="file" 
+                          onChange={handleFileChange}
+                          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.rar"
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                          required={tipePengumpulan === 'FILE'}
+                        />
+                        <div className="flex flex-col items-center justify-center pointer-events-none">
+                          <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md mb-3 text-purple-600 group-hover:scale-110 transition-transform">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                          </div>
+                          <p className="text-sm font-extrabold text-purple-900 mb-1">
+                            {fileTugas ? fileTugas.name : "Click or drag your file here"}
+                          </p>
+                          <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest">Max 15MB (PDF, PPT, DOC, ZIP)</p>
                         </div>
-                        <p className="text-sm font-extrabold text-purple-900 mb-1">
-                          {fileTugas ? fileTugas.name : "Click or drag your file here"}
-                        </p>
-                        <p className="text-[10px] text-purple-600 font-bold uppercase tracking-widest">Max 15MB (PDF, PPT, DOC, ZIP)</p>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {statusAksi && (
-                  <div className="bg-purple-100 text-purple-800 p-4 rounded-xl text-sm font-bold text-center border border-purple-200 animate-pulse shadow-inner">{statusAksi}</div>
-                )}
+                  {statusAksi && (
+                    <div className="bg-purple-100 text-purple-800 p-4 rounded-xl text-sm font-bold text-center border border-purple-200 animate-pulse shadow-inner">{statusAksi}</div>
+                  )}
 
-                <button type="submit" disabled={memuat} className="w-full bg-purple-700 hover:bg-purple-800 text-white font-black tracking-widest py-4 rounded-xl shadow-lg shadow-purple-500/30 transition-all mt-2 disabled:bg-slate-300 disabled:shadow-none hover:-translate-y-1">
-                  {memuat ? 'PROCESSING...' : 'SUBMIT ASSIGNMENT'}
-                </button>
-              </form>
+                  <button type="submit" disabled={memuat} className="w-full bg-purple-700 hover:bg-purple-800 text-white font-black tracking-widest py-4 rounded-xl shadow-lg shadow-purple-500/30 transition-all mt-2 disabled:bg-slate-300 disabled:shadow-none hover:-translate-y-1">
+                    {memuat ? 'PROCESSING...' : 'SUBMIT ASSIGNMENT'}
+                  </button>
+                </form>
+              )}
             </div>
           </div>
         )}
