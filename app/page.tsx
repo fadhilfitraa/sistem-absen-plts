@@ -17,7 +17,7 @@ export default function LandingPage() {
             className="h-16 sm:h-20 md:h-24 object-contain mb-4 sm:mb-6 drop-shadow-lg"
           />
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white tracking-tight drop-shadow-md leading-tight">
-            Portal Absensi & Penugasan PLTS ITERA
+            PORTAL KERJA PRAKTIK & MAGANG
           </h1>
           <p className="mt-2 sm:mt-3 text-gray-300 font-medium tracking-widest uppercase text-[10px] sm:text-xs md:text-sm">
             Laboratorium UPT PLTS ITERA
